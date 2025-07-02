@@ -14,6 +14,7 @@ gamma=0.99
 clip_epsilon=0.2
 task_to_class = {
     'GraspFixedBlock': GraspFixedBlockEnv,
+    'PickPlaceFixedBlock': PickPlaceFixedBlockEnv,
     'GraspFixedRod': GraspFixedRodEnv,
     'GraspRandomBlock': GraspRandomBlockEnv,
     'GraspRandomRod': GraspRandomRodEnv,
@@ -50,7 +51,7 @@ def train_ppo(args, lr, gamma, clip_epsilon):
         run(env, agent)
 
 def run(env, agent):
-    num_episodes = 50
+    num_episodes = 100
     batch_size = args.batch_size if args.batch_size else 64 * args.num_envs
     rewards_stats, dones_stats, episode_stats = [], [], []
 
@@ -61,8 +62,7 @@ def run(env, agent):
         done_array = torch.tensor([False] * env.num_envs).to(args.device)
         states, actions, rewards, dones = [], [], [], []
 
-
-        for step in range(100):
+        for step in range(150):
             action = agent.select_action(state)
             next_state, reward, done = env.step(action)
 
@@ -78,12 +78,14 @@ def run(env, agent):
             if done_array.all():
                 break
 
+        print(f"Episode {episode}, Total Done: {total_done.sum().item()}")
+
         agent.train(states, actions, rewards, dones)
         
         if episode % 10 == 0:
             agent.save_checkpoint()
         episode_stats.append(episode)
-        rewards_stats.append(total_reward.sum().cpu().numpy()/env.num_envs)
+        rewards_stats.append(total_reward.sum().cpu().numpy()/(env.num_envs))
         dones_stats.append(total_done.sum().cpu().numpy()/env.num_envs)
         print(f"Episode {episode}, Total Reward: {total_reward}")
     
@@ -91,20 +93,20 @@ def run(env, agent):
     
     figure, axis = plt.subplots(1, 2, figsize=(12, 5))  # Create a figure with 1 row and 2 columns of subplots
 
-    # Plot rewards on the first subplot
+    # Plot rewards
     axis[0].plot(episode_stats, rewards_stats, color='b')
     axis[0].set_title('Rewards')
     axis[0].set_xlabel('Episode')
     axis[0].set_ylabel('Reward')
-    axis[0].legend()
-
-    # Plot dones on the second subplot
+    axis[0].legend('Reward')
+    
+    # Plot dones
     axis[1].plot(episode_stats, dones_stats, color='r')
     axis[1].set_title('Dones')
     axis[1].set_xlabel('Episode')
     axis[1].set_ylabel('Done')
     axis[1].legend()
-
+    
     # Set a common title for the entire figure
     plt.suptitle(f"LR: {lr}, Gamma: {gamma}, Clip Epsilon: {clip_epsilon}")
     

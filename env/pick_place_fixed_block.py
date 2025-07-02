@@ -1,18 +1,15 @@
 import numpy as np
 import genesis as gs
 import torch
-#Stability test :
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
-
-
 start_cube_pos = (0.65, 0.0, 0.02)
+start_table_pos = (0, 0.65, 0.1)
 
-class GraspFixedBlockEnv:
+
+class PickPlaceFixedBlockEnv:
     def __init__(self, vis, device, num_envs=1):
         self.device = device
         self.action_space = 8  
-        self.state_dim = 9  
+        self.state_dim = 6  
         self.scene = gs.Scene(
             viewer_options=gs.options.ViewerOptions(
                 camera_pos=(3, -1, 1.5),
@@ -39,6 +36,13 @@ class GraspFixedBlockEnv:
             gs.morphs.Box(
                 size=(0.04, 0.04, 0.04), # block
                 pos=start_cube_pos,
+            )
+        )
+        self.table = self.scene.add_entity(
+            gs.morphs.Box(
+                size=(0.2, 0.2, 0.2), # block
+                pos=start_table_pos,
+                fixed=True
             )
         )
         self.num_envs = num_envs
@@ -79,10 +83,8 @@ class GraspFixedBlockEnv:
         self.cube.set_pos(cube_pos, envs_idx=self.envs_idx)
 
         obs1 = self.cube.get_pos()
-        #obs2 = (self.franka.get_link("left_finger").get_pos() + self.franka.get_link("right_finger").get_pos()) / 2 
-        obs2 = self.franka.get_link("left_finger").get_pos()
-        obs3 = self.franka.get_link("right_finger").get_pos()
-        state = torch.concat([obs1, obs2, obs3], dim=1)
+        obs2 = (self.franka.get_link("left_finger").get_pos() + self.franka.get_link("right_finger").get_pos()) / 2 
+        state = torch.concat([obs1, obs2], dim=1)
         return state
 
 #    def in_pick_up_box(self, gripper_position, block_position, hitbox_range_xy=0.1, hitbox_height=0.2):
@@ -120,7 +122,7 @@ class GraspFixedBlockEnv:
         self.finger_pos[action_mask_1] = 0
         
         pos = self.pos.clone()
-        pos[action_mask_2, 2] += 0.2
+        pos[action_mask_2, 2] += 0.02
         pos[action_mask_3, 2] -= 0.01
         pos[action_mask_4, 0] -= 0.01
         pos[action_mask_5, 0] += 0.01
@@ -139,11 +141,12 @@ class GraspFixedBlockEnv:
         self.scene.step()
         
         block_position = self.cube.get_pos()
+        table_position = self.table.get_pos()
+        table_top_position = table_position + 0.1
         gripper_position = (self.franka.get_link("left_finger").get_pos() + self.franka.get_link("right_finger").get_pos()) / 2
         gripper1_position = self.franka.get_link("left_finger").get_pos()
         gripper2_position = self.franka.get_link("right_finger").get_pos()
-        
-        states = torch.concat([block_position, gripper1_position, gripper2_position], dim=1)    
+        states = torch.concat([block_position, gripper_position], dim=1)    
 
         # -Effector distance from the cube
         dee = torch.norm(block_position - gripper_position, dim=1)
@@ -151,25 +154,27 @@ class GraspFixedBlockEnv:
         # -Finger distance from the cube
         dfg = torch.norm(block_position - gripper1_position, dim=1) + torch.norm(block_position - gripper2_position, dim=1)
         
+        # -Distance of the cube from the table top
+        #dft = torch.norm(block_position - table_top_position, dim=1)   
+        
         # +Height of the cube
-        #height_reward = block_position[:, 2]
-        height_reward = torch.where(
-            block_position[:, 2] > 0.4,
-            torch.abs(block_position[:, 2] - 0.35)*1/2,
-            (block_position[:, 2] - 0.0199)*10
-        )
+        height_reward = torch.where(block_position[:, 2] < 0.35, block_position[:, 2] - 0.0199, torch.tensor(0.0, device=block_position.device))
+
+        # Check if the gripper is in the pick-up box
+        #in_box = self.in_pick_up_box(gripper_position, start_cube_pos)
+
         # +Being aligned with the cube in the pick-up box
         #norm_penalty = torch.norm(start_cube_pos[:2] - gripper_position[:, :2], dim=1)
 
         # Combine rewards
-        rewards = 1/(dee + dfg*5 + 1) + height_reward
+        rewards = 1/(dee + dfg + 0*5 + 1) + height_reward*2
         #rewards[in_box] -= norm_penalty[in_box]
 
         #rewards = 1/torch.exp(+torch.norm(block_position - gripper1_position, dim=1) + torch.norm(block_position - gripper2_position, dim=1))*10 + 0.0199*2
         #+ (block_position[:, 2]-0.0199)*100 if in_pick_up_box(): -torch.norm(start_cube_pos - gripper_position, dim=1)
         
         #rewards = -torch.norm(block_position - gripper_position, dim=1)+ torch.maximum(torch.tensor(0.02), (block_position[:, 2]-0.2)) * 10 #default reward
-        dones = block_position[:, 2] > 0.35
+        dones = torch.norm(block_position - table_top_position, dim=1) < 0.05
         return states, rewards, dones
 
 if __name__ == "__main__":
