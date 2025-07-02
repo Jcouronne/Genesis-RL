@@ -1,1 +1,1 @@
-Original repo https://github.com/RochelleNi/GenesisEnvs/tree/master/logs
+Original repo https://github.com/RochelleNi/GenesisEnvs
