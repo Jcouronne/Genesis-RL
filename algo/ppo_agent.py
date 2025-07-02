@@ -6,10 +6,10 @@ import argparse
 from network.ppo import PPO
 
 class PPOAgent:
-    def __init__(self, input_dim, output_dim, lr, gamma, clip_epsilon, device, load=False, num_envs=1, hidden_dim=64, checkpoint_path=None):
+    def __init__(self, input_dim, output_dim, lr, gamma, clip_epsilon, num_layers, device, load=False, num_envs=1, hidden_dim=64, checkpoint_path=None):
         self.device = device
         self.num_envs = num_envs
-        self.model = PPO(input_dim, output_dim, hidden_dim).to(self.device)
+        self.model = PPO(input_dim, output_dim, hidden_dim, num_layers).to(self.device)
         self.checkpoint_path = checkpoint_path
         if load: 
             self.load_checkpoint()

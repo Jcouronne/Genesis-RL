@@ -12,6 +12,7 @@ gs.init(backend=gs.gpu, precision="32")
 lr=1e-3
 gamma=0.99
 clip_epsilon=0.2
+num_layers = 32
 task_to_class = {
     'GraspFixedBlock': GraspFixedBlockEnv,
     'PickPlaceFixedBlock': PickPlaceFixedBlockEnv,
@@ -27,7 +28,7 @@ def create_environment(task_name):
     else:
         raise ValueError(f"Task '{task_name}' is not recognized.")
 
-def train_ppo(args, lr, gamma, clip_epsilon):
+def train_ppo(args, lr, gamma, clip_epsilon, num_layers):
     if args.load_path == "default":
         load = True
         checkpoint_path = f"logs/{args.task}_ppo_checkpoint_released.pth"
@@ -42,7 +43,7 @@ def train_ppo(args, lr, gamma, clip_epsilon):
     env = create_environment(args.task)(vis=args.vis, device=args.device, num_envs=args.num_envs)
     print(f"Created environment: {env}")
     
-    agent = PPOAgent(input_dim=env.state_dim, output_dim=env.action_space, lr=lr, gamma=gamma, clip_epsilon=clip_epsilon, device=args.device, load=load, \
+    agent = PPOAgent(input_dim=env.state_dim, output_dim=env.action_space, lr=lr, gamma=gamma, clip_epsilon=clip_epsilon, num_layers=num_layers, device=args.device, load=load, \
                      num_envs=args.num_envs, hidden_dim=args.hidden_dim, checkpoint_path=checkpoint_path)
     if args.device == "mps":
         gs.tools.run_in_another_thread(fn=run, args=(env, agent))
@@ -51,7 +52,7 @@ def train_ppo(args, lr, gamma, clip_epsilon):
         run(env, agent)
 
 def run(env, agent):
-    num_episodes = 100
+    num_episodes = 50
     batch_size = args.batch_size if args.batch_size else 64 * args.num_envs
     rewards_stats, dones_stats, episode_stats = [], [], []
 
@@ -130,4 +131,4 @@ def arg_parser():
 
 if __name__ == "__main__":
     args = arg_parser()
-    train_ppo(args, lr, gamma, clip_epsilon)
+    train_ppo(args, lr, gamma, clip_epsilon, num_layers)

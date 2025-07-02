@@ -12,7 +12,7 @@ class GraspFixedBlockEnv:
     def __init__(self, vis, device, num_envs=1):
         self.device = device
         self.action_space = 8  
-        self.state_dim = 9  
+        self.state_dim = 13
         self.scene = gs.Scene(
             viewer_options=gs.options.ViewerOptions(
                 camera_pos=(3, -1, 1.5),
@@ -79,10 +79,11 @@ class GraspFixedBlockEnv:
         self.cube.set_pos(cube_pos, envs_idx=self.envs_idx)
 
         obs1 = self.cube.get_pos()
+        obs2 = self.cube.get_quat()
         #obs2 = (self.franka.get_link("left_finger").get_pos() + self.franka.get_link("right_finger").get_pos()) / 2 
-        obs2 = self.franka.get_link("left_finger").get_pos()
-        obs3 = self.franka.get_link("right_finger").get_pos()
-        state = torch.concat([obs1, obs2, obs3], dim=1)
+        obs3 = self.franka.get_link("left_finger").get_pos()
+        obs4 = self.franka.get_link("right_finger").get_pos()
+        state = torch.concat([obs1, obs2, obs3, obs4], dim=1)
         return state
 
 #    def in_pick_up_box(self, gripper_position, block_position, hitbox_range_xy=0.1, hitbox_height=0.2):
@@ -139,11 +140,12 @@ class GraspFixedBlockEnv:
         self.scene.step()
         
         block_position = self.cube.get_pos()
+        block_quaternion = self.cube.get_quat()
         gripper_position = (self.franka.get_link("left_finger").get_pos() + self.franka.get_link("right_finger").get_pos()) / 2
         gripper1_position = self.franka.get_link("left_finger").get_pos()
         gripper2_position = self.franka.get_link("right_finger").get_pos()
         
-        states = torch.concat([block_position, gripper1_position, gripper2_position], dim=1)    
+        states = torch.concat([block_position, gripper1_position, gripper2_position, block_quaternion], dim=1)    
 
         # -Effector distance from the cube
         dee = torch.norm(block_position - gripper_position, dim=1)
