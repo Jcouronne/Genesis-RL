@@ -57,7 +57,7 @@ class GraspRandomBlockEnv:
         quat = torch.tensor([0, 1, 0, 0], dtype=torch.float32, device=self.device)
         self.quat = quat.unsqueeze(0).repeat(self.num_envs, 1)
         self.qpos = self.franka.inverse_kinematics(
-            link=self.end_effector,
+            link = self.end_effector,
             pos = self.pos,
             quat = self.quat,
         )
@@ -67,10 +67,16 @@ class GraspRandomBlockEnv:
         self.build_env()
         ## random cube position
         cube_pos = np.array([0.65, 0.0, 0.02])
-        x_min, x_max = 0.64, 0.66  
-        y_min, y_max = -0.01, 0.01  
-        random_x = np.random.uniform(x_min, x_max, size=self.num_envs)
-        random_y = np.random.uniform(y_min, y_max, size=self.num_envs)
+        #x_min, x_max = 0.64, 0.66  
+        #y_min, y_max = -0.01, 0.01  
+        R_min, R_max = 0.4, 0.7
+        theta_min, theta_max = np.pi/10, -np.pi/10
+        random_r = np.random.uniform(R_min, R_max, self.num_envs)
+        random_theta = np.random.uniform(theta_min, theta_max, self.num_envs)
+        random_x = random_r * np.cos(random_theta)
+        random_y = random_r * np.sin(random_theta)
+        #random_x = np.random.uniform(x_min, x_max, size=self.num_envs)
+        #random_y = np.random.uniform(y_min, y_max, size=self.num_envs)
         cube_pos = np.column_stack((random_x, random_y, np.full(self.num_envs, cube_pos[2])))
         ## random cube orientation
         fixed_roll = 0
@@ -100,8 +106,8 @@ class GraspRandomBlockEnv:
         finger_pos[action_mask_2] = 0
         
         pos = self.pos.clone()
-        pos[action_mask_2, 2] = 0.4
-        pos[action_mask_3, 2] = 0
+        pos[action_mask_2, 2] = 0.1
+        pos[action_mask_3, 2] = -0.1
         pos[action_mask_4, 0] -= 0.05
         pos[action_mask_5, 0] += 0.05
         pos[action_mask_6, 1] -= 0.05
@@ -121,9 +127,10 @@ class GraspRandomBlockEnv:
         block_position = self.cube.get_pos()
         gripper_position = (self.franka.get_link("left_finger").get_pos() + self.franka.get_link("right_finger").get_pos()) / 2
         states = torch.concat([block_position, gripper_position], dim=1)
-
-        rewards = -torch.norm(block_position - gripper_position, dim=1) + torch.maximum(torch.tensor(0.02), block_position[:, 2]) * 10
-        dones = block_position[:, 2] > 0.35
+        gripper_z_reward = gripper_position[:, 2] > 0.01
+        gripper_z_reward_int = gripper_z_reward.int()
+        rewards = +gripper_z_reward_int -torch.norm(block_position - gripper_position, dim=1) + torch.maximum(torch.tensor(0.02), block_position[:, 2]) * 10
+        dones = (block_position[:, 2] > 0.35) & (torch.norm(block_position - gripper_position, dim=1) < 0.01)
         return states, rewards, dones
 
 

@@ -123,7 +123,7 @@ class GraspRandomRodEnv:
         states = torch.concat([block_position, gripper_position], dim=1)
 
         rewards = -torch.norm(block_position - gripper_position, dim=1) + torch.maximum(torch.tensor(0.02), block_position[:, 2]) * 10
-        dones = block_position[:, 2] > 0.35
+        dones = (block_position[:, 2] > 0.35) & (torch.norm(block_position - gripper_position, dim=1) < 0.05)
         return states, rewards, dones
 
 

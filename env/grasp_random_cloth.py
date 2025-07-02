@@ -1,13 +1,14 @@
 import numpy as np
 import genesis as gs
 import torch
-start_cube_pos = (0.65, 0.0, 0.02)
+from .util import euler_to_quaternion
 
-class GraspFixedBlockEnv:
+class GraspRandomBlockEnv:
     def __init__(self, vis, device, num_envs=1):
         self.device = device
         self.action_space = 8  
         self.state_dim = 6  
+
         self.scene = gs.Scene(
             viewer_options=gs.options.ViewerOptions(
                 camera_pos=(3, -1, 1.5),
@@ -30,12 +31,19 @@ class GraspFixedBlockEnv:
         self.franka = self.scene.add_entity(
             gs.morphs.MJCF(file="../assets/xml/franka_emika_panda/panda.xml"),
         )
-        self.cube = self.scene.add_entity(
-            gs.morphs.Box(
-                size=(0.04, 0.04, 0.04), # block
-                pos=start_cube_pos,
-            )
-        )
+	cloth_1 = scene.add_entity(
+	    material=gs.materials.PBD.Cloth(),
+	    morph=gs.morphs.Mesh(
+		file='meshes/cloth.obj',
+		scale=2.0,
+		pos=(0.65, 0.0, 0.02), 
+		euler=(0.0, 0, 0.0),
+	    ),
+	    surface=gs.surfaces.Default(
+		color=(0.2, 0.4, 0.8, 1.0),
+		vis_mode='visual',
+	    )
+	)
         self.num_envs = num_envs
         self.scene.build(n_envs=self.num_envs)
         self.envs_idx = np.arange(self.num_envs)
@@ -52,9 +60,7 @@ class GraspFixedBlockEnv:
         self.end_effector = self.franka.get_link("hand")
         ## here self.pos and self.quat is target for the end effector; not the cube. cube position is set in reset()
         pos = torch.tensor([0.65, 0.0, 0.135], dtype=torch.float32, device=self.device)
-        self.finger_pos = torch.full((self.num_envs, 2), 0.04, dtype=torch.float32, device=self.device) #test
         self.pos = pos.unsqueeze(0).repeat(self.num_envs, 1)
-        self.finger_pos = self.finger_pos.repeat(self.num_envs, 1) #test
         quat = torch.tensor([0, 1, 0, 0], dtype=torch.float32, device=self.device)
         self.quat = quat.unsqueeze(0).repeat(self.num_envs, 1)
         self.qpos = self.franka.inverse_kinematics(
@@ -66,56 +72,47 @@ class GraspFixedBlockEnv:
 
     def reset(self):
         self.build_env()
-        # fixed cube position
-        cube_pos = np.array(start_cube_pos)
-        cube_pos = np.repeat(cube_pos[np.newaxis], self.num_envs, axis=0)
-        self.cube.set_pos(cube_pos, envs_idx=self.envs_idx)
+        ## random cube position
+        cube_pos = np.array([0.65, 0.0, 0.02])
+        x_min, x_max = 0.64, 0.66  
+        y_min, y_max = -0.01, 0.01  
+        random_x = np.random.uniform(x_min, x_max, size=self.num_envs)
+        random_y = np.random.uniform(y_min, y_max, size=self.num_envs)
+        cube_pos = np.column_stack((random_x, random_y, np.full(self.num_envs, cube_pos[2])))
+        ## random cube orientation
+        fixed_roll = 0
+        fixed_pitch = 0
+        random_yaws = np.random.uniform(0, 2 * np.pi, size=self.num_envs) 
+        quaternions = np.array([euler_to_quaternion(fixed_roll, fixed_pitch, yaw) for yaw in random_yaws])
+        self.cube.set_pos(cube_pos, envs_idx=self.envs_idx)   
+        self.cube.set_quat(quaternions, envs_idx=self.envs_idx) 
 
         obs1 = self.cube.get_pos()
         obs2 = (self.franka.get_link("left_finger").get_pos() + self.franka.get_link("right_finger").get_pos()) / 2 
         state = torch.concat([obs1, obs2], dim=1)
         return state
 
-#    def in_pick_up_box(self, gripper_position, block_position, hitbox_range_xy=0.1, hitbox_height=0.2):
-#        """
-#        Check if the gripper position is within a hitbox defined above the block position.
-#        """
-#        cube_position = torch.tensor(start_cube_pos)
-#        # Calculate the boundaries of the hitbox
-#        lower_bound_xy = start_cube_pos[:, :2] - hitbox_range_xy
-#        upper_bound_xy = start_cube_pos[:, :2] + hitbox_range_xy
-#        lower_bound_z = start_cube_pos[:, 2]
-#        upper_bound_z = start_cube_pos[:, 2] + hitbox_height
-
-        # Check if gripper is within the hitbox
-#        in_range_xy = torch.all((gripper_position[:, :2] >= lower_bound_xy) &
-#        (gripper_position[:, :2] <= upper_bound_xy), dim=1)
-#        in_range_z = (gripper_position[:, 2] >= lower_bound_z) & (gripper_position[:, 2] <= upper_bound_z)
-#        in_hitbox = in_range_xy & in_range_z
-
-#        return in_hitbox
-        
     def step(self, actions):
         action_mask_0 = actions == 0 # Open gripper
         action_mask_1 = actions == 1 # Close gripper
-        action_mask_2 = actions == 2 # Move up
-        action_mask_3 = actions == 3 # Move down
+        action_mask_2 = actions == 2 # Lift gripper
+        action_mask_3 = actions == 3 # Lower gripper
         action_mask_4 = actions == 4 # Move left
         action_mask_5 = actions == 5 # Move right
         action_mask_6 = actions == 6 # Move forward
         action_mask_7 = actions == 7 # Move backward
-        
-        finger_pos = self.finger_pos.clone() #torch.full((self.num_envs, 2), 0.04, dtype=torch.float32, device=self.device)
-        finger_pos[action_mask_0] = 0.04
+
+        finger_pos = torch.full((self.num_envs, 2), 0.04, dtype=torch.float32, device=self.device)
         finger_pos[action_mask_1] = 0
+        finger_pos[action_mask_2] = 0
         
         pos = self.pos.clone()
-        pos[action_mask_2, 2] += 0.01
-        pos[action_mask_3, 2] -= 0.01
-        pos[action_mask_4, 0] -= 0.01
-        pos[action_mask_5, 0] += 0.01
-        pos[action_mask_6, 1] -= 0.01
-        pos[action_mask_7, 1] += 0.01
+        pos[action_mask_2, 2] = 0.4
+        pos[action_mask_3, 2] = 0
+        pos[action_mask_4, 0] -= 0.05
+        pos[action_mask_5, 0] += 0.05
+        pos[action_mask_6, 1] -= 0.05
+        pos[action_mask_7, 1] += 0.05
 
         self.pos = pos
         self.qpos = self.franka.inverse_kinematics(
@@ -130,36 +127,13 @@ class GraspFixedBlockEnv:
 
         block_position = self.cube.get_pos()
         gripper_position = (self.franka.get_link("left_finger").get_pos() + self.franka.get_link("right_finger").get_pos()) / 2
-        gripper1_position = self.franka.get_link("left_finger").get_pos()
-        gripper2_position = self.franka.get_link("right_finger").get_pos()
-        states = torch.concat([block_position, gripper_position], dim=1)    
+        states = torch.concat([block_position, gripper_position], dim=1)
 
-        # -Effector distance from the cube
-        dee = 0 #torch.norm(block_position - gripper_position, dim=1)
-                                
-        # -Finger distance from the cube
-        dfg = torch.norm(block_position - gripper1_position, dim=1) + torch.norm(block_position - gripper2_position, dim=1) #- 0.0199 * 2
-        print(1/dfg)
-
-        # +Height of the cube
-        height_reward = 0 #(block_position[:, 2] - 0.0199)
-
-        # Check if the gripper is in the pick-up box
-        #in_box = self.in_pick_up_box(gripper_position, start_cube_pos)
-
-        # +Being aligned with the cube in the pick-up box
-        #norm_penalty = torch.norm(start_cube_pos[:2] - gripper_position[:, :2], dim=1)
-
-        # Combine rewards
-        rewards = 1/dfg#1/(dee + dfg + 1) + height_reward*10
-        #rewards[in_box] -= norm_penalty[in_box]
-
-        #rewards = 1/torch.exp(+torch.norm(block_position - gripper1_position, dim=1) + torch.norm(block_position - gripper2_position, dim=1))*10 + 0.0199*2
-        #+ (block_position[:, 2]-0.0199)*100 if in_pick_up_box(): -torch.norm(start_cube_pos - gripper_position, dim=1)
-        #rewards = -torch.norm(block_position - gripper_position, dim=1)+ torch.maximum(torch.tensor(0.02), (block_position[:, 2]-0.2)) * 10 #default reward
+        rewards = -torch.norm(block_position - gripper_position, dim=1) + torch.maximum(torch.tensor(0.02), block_position[:, 2]) * 10
         dones = block_position[:, 2] > 0.35
         return states, rewards, dones
 
+
 if __name__ == "__main__":
     gs.init(backend=gs.gpu, precision="32")
-    env = GraspFixedBlockEnv(vis=True)
+    env = GraspRandomBlockEnv(vis=True)
