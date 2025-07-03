@@ -75,6 +75,7 @@ class GraspFixedRodEnv:
         return state
 
     def step(self, actions):
+        print(self.envs_idx)
         action_mask_0 = actions == 0 # Open gripper
         action_mask_1 = actions == 1 # Close gripper
         action_mask_2 = actions == 2 # Lift gripper
@@ -102,7 +103,7 @@ class GraspFixedRodEnv:
             pos=pos,
             quat=self.quat,
         )
-
+        print(self.qpos)
         self.franka.control_dofs_position(self.qpos[:, :-2], self.motors_dof, self.envs_idx)
         self.franka.control_dofs_position(finger_pos, self.fingers_dof, self.envs_idx)
         self.scene.step()

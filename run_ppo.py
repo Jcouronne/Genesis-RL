@@ -12,7 +12,7 @@ gs.init(backend=gs.gpu, precision="32")
 lr=1e-3
 gamma=0.99
 clip_epsilon=0.2
-num_layers = 32
+num_layers = 64
 task_to_class = {
     'GraspFixedBlock': GraspFixedBlockEnv,
     'PickPlaceFixedBlock': PickPlaceFixedBlockEnv,
@@ -63,7 +63,7 @@ def run(env, agent):
         done_array = torch.tensor([False] * env.num_envs).to(args.device)
         states, actions, rewards, dones = [], [], [], []
 
-        for step in range(150):
+        for step in range(4):
             action = agent.select_action(state)
             next_state, reward, done = env.step(action)
 
@@ -109,7 +109,7 @@ def run(env, agent):
     axis[1].legend()
     
     # Set a common title for the entire figure
-    plt.suptitle(f"LR: {lr}, Gamma: {gamma}, Clip Epsilon: {clip_epsilon}")
+    plt.suptitle(f"LR: {lr}, Gamma: {gamma}, Clip Epsilon: {clip_epsilon}, Layers: {num_layers}")
     
     ts = time.time()
     timestamp = datetime.fromtimestamp(ts).strftime('%Y-%m-%d_%H:%M:%S')
