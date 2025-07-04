@@ -81,8 +81,6 @@ class GraspFixedBlockEnv:
         obs1 = self.cube.get_pos()
         obs2 = self.cube.get_quat()
         obs3 = (self.franka.get_link("left_finger").get_pos() + self.franka.get_link("right_finger").get_pos()) / 2 
-        #obs3 = self.franka.get_link("left_finger").get_pos()
-        #obs4 = self.franka.get_link("right_finger").get_pos()
         state = torch.concat([obs1, obs2, obs3], dim=1)
         return state
         
