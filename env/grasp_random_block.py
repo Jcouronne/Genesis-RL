@@ -67,8 +67,6 @@ class GraspRandomBlockEnv:
         self.build_env()
         ## random cube position
         cube_pos = np.array([0.65, 0.0, 0.02])
-        #x_min, x_max = 0.64, 0.66  
-        #y_min, y_max = -0.01, 0.01  
         R_min, R_max = 0.4, 0.7
         theta_min, theta_max = np.pi/10, -np.pi/10
         random_r = np.random.uniform(R_min, R_max, self.num_envs)
