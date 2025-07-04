@@ -2,7 +2,7 @@ import numpy as np
 import genesis as gs
 import torch
 start_cube_pos = (0.65, 0.0, 0.02)
-start_table_pos = (0, 0.65, 0.1)
+start_target_pos = (0, 0.65, 0.1)
 
 
 class PickPlaceFixedBlockEnv:
@@ -38,10 +38,10 @@ class PickPlaceFixedBlockEnv:
                 pos=start_cube_pos,
             )
         )
-        self.table = self.scene.add_entity(
+        self.target = self.scene.add_entity(
             gs.morphs.Box(
                 size=(0.2, 0.2, 0.2), # block
-                pos=start_table_pos,
+                pos=start_target_pos,
                 fixed=True
             )
         )
@@ -107,74 +107,78 @@ class PickPlaceFixedBlockEnv:
 #        return in_hitbox
         
     def step(self, actions):
-        action_mask_0 = actions == 0 # Open gripper
-        action_mask_1 = actions == 1 # Close gripper
-        action_mask_2 = actions == 2 # Move up
-        action_mask_3 = actions == 3 # Move down
-        action_mask_4 = actions == 4 # Move left
-        action_mask_5 = actions == 5 # Move right
-        action_mask_6 = actions == 6 # Move forward
-        action_mask_7 = actions == 7 # Move backward
-        
-        #finger_pos = self.finger_pos.clone()
-        #finger_pos = torch.full((self.num_envs, 2), 0.04, dtype=torch.float32, device=self.device)
-        self.finger_pos[action_mask_0] = 0.04
-        self.finger_pos[action_mask_1] = 0
-        
-        pos = self.pos.clone()
-        pos[action_mask_2, 2] += 0.02
-        pos[action_mask_3, 2] -= 0.01
-        pos[action_mask_4, 0] -= 0.01
-        pos[action_mask_5, 0] += 0.01
-        pos[action_mask_6, 1] -= 0.01
-        pos[action_mask_7, 1] += 0.01
-
-        self.pos = pos
-        self.qpos = self.franka.inverse_kinematics(
-            link=self.end_effector,
-            pos=pos,
-            quat=self.quat,
-        )
-        
-        self.franka.control_dofs_position(self.qpos[:, :-2], self.motors_dof, self.envs_idx)
-        self.franka.control_dofs_position(self.finger_pos, self.fingers_dof, self.envs_idx)
-        self.scene.step()
-        
+        # Get positions and orientations for all environments
         block_position = self.cube.get_pos()
-        table_position = self.table.get_pos()
-        table_top_position = table_position + 0.1
-        gripper_position = (self.franka.get_link("left_finger").get_pos() + self.franka.get_link("right_finger").get_pos()) / 2
-        gripper1_position = self.franka.get_link("left_finger").get_pos()
-        gripper2_position = self.franka.get_link("right_finger").get_pos()
-        states = torch.concat([block_position, gripper_position], dim=1)    
+        #offset = torch.tensor([0.01, 0.0, 0.0], device=self.device)  # Offset for the cube position
+        block_quaternion = self.cube.get_quat()
+        target_position = self.target.get_pos()
+        target_quaternion = self.target.get_quat()
+        end_effector = self.franka.get_link('hand')
+
+        # Create action masks for all environments
+        action_mask_0 = actions == 0  # Move above cube
+        action_mask_1 = actions == 1  # Lift cube
+        action_mask_2 = actions == 2  # Move above target
+        action_mask_3 = actions == 3  # Place cube
+
+        # Initialize qpos tensor for all environments
+        qpos = torch.zeros((self.num_envs, 9), device=self.device)
+        pos = torch.zeros((self.num_envs, 3), device=self.device)
+
+        # Set target positions based on action masks
+        pos[action_mask_0] = block_position[action_mask_0] #- offset
+        pos[action_mask_1] = block_position[action_mask_1] + torch.tensor([0.0, 0.0, 0.4], device=self.device)
+        pos[action_mask_2] = target_position[action_mask_2] + torch.tensor([0.0, 0.0, 0.4], device=self.device)
+        pos[action_mask_3] = target_position[action_mask_3]
+        
+        # Compute inverse kinematics for the target position
+        target_qpos = self.franka.inverse_kinematics(
+            link=end_effector,
+            pos=pos.cpu().numpy(),
+            quat=torch.tensor([0, 1, 0, 0], device=self.device).repeat(self.num_envs, 1).cpu().numpy(),
+        )
+        target_qpos = torch.tensor(target_qpos, device=self.device)
+
+        # Update qpos for environments based on action masks
+        qpos[action_mask_0] = target_qpos[action_mask_0]
+        qpos[action_mask_1] = target_qpos[action_mask_1]
+        qpos[action_mask_2] = target_qpos[action_mask_2]
+        qpos[action_mask_3] = target_qpos[action_mask_3]
+
+        #control fingers first
+        finger_positions = torch.full((self.num_envs, 2), 0.04, device=self.device)
+        finger_positions[action_mask_0] = torch.tensor([0.4, 0.4], device=self.device)  # Close gripper
+        finger_positions[action_mask_1] = torch.tensor([0.0, 0.0], device=self.device)  # Close gripper
+        finger_positions[action_mask_2] = torch.tensor([0.4, 0.4], device=self.device)  # Close gripper
+        finger_positions[action_mask_3] = torch.tensor([0.0, 0.0], device=self.device)  # Close gripper
+        self.franka.control_dofs_position(finger_positions, self.fingers_dof, self.envs_idx)
+        for i in range(10):
+            self.scene.step()
+
+        # Interpolate to the target position
+        current_qpos = self.franka.get_qpos().cpu()
+
+        for alpha in np.linspace(0, 1, num=100):  # 100 steps for interpolation
+            interpolated_qpos = current_qpos + alpha * (qpos.cpu() - current_qpos)
+
+            # Control DOFs for all environments (except fingers)
+            self.franka.control_dofs_position(interpolated_qpos[:, :-2], self.motors_dof, self.envs_idx)
+
+            self.scene.step()
+        
+        gripper_position = (self.franka.get_link("left_finger").get_pos() + self.franka.get_link("right_finger").get_pos()) / 2        
+        states = torch.concat([block_position, gripper_position, block_quaternion], dim=1)    
 
         # -Effector distance from the cube
-        dee = torch.norm(block_position - gripper_position, dim=1)
-                                
-        # -Finger distance from the cube
-        dfg = torch.norm(block_position - gripper1_position, dim=1) + torch.norm(block_position - gripper2_position, dim=1)
-        
-        # -Distance of the cube from the table top
-        #dft = torch.norm(block_position - table_top_position, dim=1)   
+        #dee = torch.norm(block_position - gripper_position, dim=1)
         
         # +Height of the cube
-        height_reward = torch.where(block_position[:, 2] < 0.35, block_position[:, 2] - 0.0199, torch.tensor(0.0, device=block_position.device))
-
-        # Check if the gripper is in the pick-up box
-        #in_box = self.in_pick_up_box(gripper_position, start_cube_pos)
-
-        # +Being aligned with the cube in the pick-up box
-        #norm_penalty = torch.norm(start_cube_pos[:2] - gripper_position[:, :2], dim=1)
+        height_reward = block_position[:, 2]
 
         # Combine rewards
-        rewards = 1/(dee + dfg + 0*5 + 1) + height_reward*2
-        #rewards[in_box] -= norm_penalty[in_box]
-
-        #rewards = 1/torch.exp(+torch.norm(block_position - gripper1_position, dim=1) + torch.norm(block_position - gripper2_position, dim=1))*10 + 0.0199*2
-        #+ (block_position[:, 2]-0.0199)*100 if in_pick_up_box(): -torch.norm(start_cube_pos - gripper_position, dim=1)
-        
-        #rewards = -torch.norm(block_position - gripper_position, dim=1)+ torch.maximum(torch.tensor(0.02), (block_position[:, 2]-0.2)) * 10 #default reward
-        dones = torch.norm(block_position - table_top_position, dim=1) < 0.05
+        #rewards = 1/(dee + 1) + height_reward
+        rewards = height_reward
+        dones = block_position[:, 2] > 0.35
         return states, rewards, dones
 
 if __name__ == "__main__":
