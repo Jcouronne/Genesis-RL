@@ -40,7 +40,7 @@ class PickPlaceFixedBlockEnv:
         )
         self.target = self.scene.add_entity(
             gs.morphs.Box(
-                size=(0.2, 0.2, 0.2), # block
+                size=(0.1, 0.1, 0.2), # target
                 pos=start_target_pos,
                 fixed=True
             )
@@ -111,7 +111,8 @@ class PickPlaceFixedBlockEnv:
         block_position = self.cube.get_pos()
         #offset = torch.tensor([0.01, 0.0, 0.0], device=self.device)  # Offset for the cube position
         block_quaternion = self.cube.get_quat()
-        target_position = self.target.get_pos()
+        target_offset = torch.tensor([0.0, 0.0, 0.1], device=self.device)
+        target_position = self.target.get_pos() + target_offset
         target_quaternion = self.target.get_quat()
         end_effector = self.franka.get_link('hand')
 
