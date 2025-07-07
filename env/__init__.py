@@ -1,5 +1,6 @@
 from .grasp_fixed_block import GraspFixedBlockEnv
 from .pick_place_fixed_block import PickPlaceFixedBlockEnv
+from .pick_place_random_block import PickPlaceRandomBlockEnv
 from .grasp_fixed_rod import GraspFixedRodEnv
 from .grasp_random_block import GraspRandomBlockEnv
 from .grasp_random_rod import GraspRandomRodEnv

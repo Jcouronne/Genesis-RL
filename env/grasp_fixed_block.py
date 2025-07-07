@@ -12,7 +12,7 @@ class GraspFixedBlockEnv:
     def __init__(self, vis, device, num_envs=1):
         self.device = device
         self.action_space = 2
-        self.state_dim = 10
+        self.state_dim = 7
         self.scene = gs.Scene(
             viewer_options=gs.options.ViewerOptions(
                 camera_pos=(3, -1, 1.5),
@@ -57,11 +57,9 @@ class GraspFixedBlockEnv:
 
 
         self.end_effector = self.franka.get_link("hand")
-        ## here self.pos and self.quat is target for the end effector; not the cube. cube position is set in reset()
         pos = torch.tensor([0.65, 0.0, 0.135], dtype=torch.float32, device=self.device)
 
-        self.pos = pos.unsqueeze(0).repeat(self.num_envs, 1)
-        #self.finger_pos = self.finger_pos.unsqueeze(0).repeat(self.num_envs, 1) #copy tensor along another dimension self.num_envs times
+        self.pos = pos.unsqueeze(0).repeat(self.num_envs, 1) #copy tensor along another dimension self.num_envs times
         quat = torch.tensor([0, 1, 0, 0], dtype=torch.float32, device=self.device)
         self.quat = quat.unsqueeze(0).repeat(self.num_envs, 1)
         self.qpos = self.franka.inverse_kinematics(
@@ -79,9 +77,8 @@ class GraspFixedBlockEnv:
         self.cube.set_pos(cube_pos, envs_idx=self.envs_idx)
 
         obs1 = self.cube.get_pos()
-        obs2 = self.cube.get_quat()
-        obs3 = (self.franka.get_link("left_finger").get_pos() + self.franka.get_link("right_finger").get_pos()) / 2 
-        state = torch.concat([obs1, obs2, obs3], dim=1)
+        obs2 = self.cube.get_quat() 
+        state = torch.concat([obs1, obs2], dim=1)
         return state
         
     def step(self, actions):
@@ -139,18 +136,12 @@ class GraspFixedBlockEnv:
             self.franka.control_dofs_position(finger_positions, self.fingers_dof, self.envs_idx)
 
             self.scene.step()
-        
-        gripper_position = (self.franka.get_link("left_finger").get_pos() + self.franka.get_link("right_finger").get_pos()) / 2        
-        states = torch.concat([block_position, gripper_position, block_quaternion], dim=1)    
-
-        # -Effector distance from the cube
-        #dee = torch.norm(block_position - gripper_position, dim=1)
+            
+        states = torch.concat([block_position, block_quaternion], dim=1)    
         
         # +Height of the cube
         height_reward = block_position[:, 2]
 
-        # Combine rewards
-        #rewards = 1/(dee + 1) + height_reward
         rewards = height_reward
         dones = block_position[:, 2] > 0.35
         return states, rewards, dones

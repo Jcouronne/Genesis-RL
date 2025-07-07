@@ -1,15 +1,16 @@
 import numpy as np
 import genesis as gs
 import torch
+from .util import euler_to_quaternion
 start_cube_pos = (0.65, 0.0, 0.02)
 start_target_pos = (0, 0.65, 0.1)
 cube_size = (0.04, 0.04, 0.04)  # size of the cube
 target_size = (0.1, 0.1, 0.2)  # size of the target
 
-class PickPlaceFixedBlockEnv:
+class PickPlaceRandomBlockEnv:
     def __init__(self, vis, device, num_envs=1):
         self.device = device
-        self.action_space = 4
+        self.action_space = 5
         self.state_dim = 7
         self.scene = gs.Scene(
             viewer_options=gs.options.ViewerOptions(
@@ -78,17 +79,30 @@ class PickPlaceFixedBlockEnv:
 
     def reset(self):
         self.build_env()
-        # fixed cube position
+        ## random cube position
         cube_pos = np.array(start_cube_pos)
-        cube_pos = np.repeat(cube_pos[np.newaxis], self.num_envs, axis=0)
+        R_min, R_max = 0.4, 0.7
+        theta_min, theta_max = np.pi/10, -np.pi/10
+        random_r = np.random.uniform(R_min, R_max, self.num_envs)
+        random_theta = np.random.uniform(theta_min, theta_max, self.num_envs)
+        random_x = random_r * np.cos(random_theta)
+        random_y = random_r * np.sin(random_theta)
+        cube_pos = np.column_stack((random_x, random_y, np.full(self.num_envs, cube_pos[2])))
+        ## random cube orientation
+        fixed_roll = 0
+        fixed_pitch = 0
+        random_yaws = np.random.uniform(0, 2 * np.pi, size=self.num_envs)
+        quaternions = np.array([euler_to_quaternion(fixed_roll, fixed_pitch, yaw) for yaw in random_yaws])
         self.cube.set_pos(cube_pos, envs_idx=self.envs_idx)
+        self.cube.set_quat(quaternions, envs_idx=self.envs_idx)
 
         obs1 = self.cube.get_pos()
         obs2 = self.cube.get_quat()
         state = torch.concat([obs1, obs2], dim=1)
         return state
-        
-    def in_place_box(self, gripper_position, target_position, hitbox_range_xy=0.02):
+
+
+    def in_place_box(self, gripper_position, target_position, hitbox_range_xy=0.01):
         cube_pos = self.cube.get_pos()
         #Check if the cube position is within the target hitbox
         lower_bound_xy = target_position[:, :2] - hitbox_range_xy
@@ -132,7 +146,6 @@ class PickPlaceFixedBlockEnv:
         pos[action_mask_2] = target_position[action_mask_2] + torch.tensor([0.0, 0.0, 0.3], device=self.device)
         pos[action_mask_3] = target_position[action_mask_3]
         pos[action_mask_4] = target_position[action_mask_4] + torch.tensor([0.0, 0.0, 0.3], device=self.device)
-
 
         # Compute inverse kinematics for the target position
         target_qpos = self.franka.inverse_kinematics(
@@ -180,7 +193,7 @@ class PickPlaceFixedBlockEnv:
         rewards = 1/(cdft + 1)*10
         dones = self.in_place_box(gripper_position, target_position) & torch.all(self.cube.get_vel() == 0,dim=1)
         return states, rewards, dones
-    
+
 if __name__ == "__main__":
     gs.init(backend=gs.gpu, precision="32")
-    env = PickPlaceFixedBlockEnv(vis=True, device="cuda")
+    env = PickPlaceRandomBlockEnv(vis=True, device="cuda")
