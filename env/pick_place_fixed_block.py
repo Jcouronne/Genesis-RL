@@ -9,7 +9,7 @@ target_size = (0.1, 0.1, 0.2)  # size of the target
 class PickPlaceFixedBlockEnv:
     def __init__(self, vis, device, num_envs=1):
         self.device = device
-        self.action_space = 4
+        self.action_space = 5
         self.state_dim = 7
         self.scene = gs.Scene(
             viewer_options=gs.options.ViewerOptions(
@@ -49,7 +49,6 @@ class PickPlaceFixedBlockEnv:
         self.num_envs = num_envs
         self.scene.build(n_envs=self.num_envs)
         self.envs_idx = np.arange(self.num_envs)
-        self.finger_pos = torch.full((self.num_envs, 2), 0.04, dtype=torch.float32, device=self.device) #test
         self.build_env()
     
     def build_env(self):
@@ -88,32 +87,54 @@ class PickPlaceFixedBlockEnv:
         state = torch.concat([obs1, obs2], dim=1)
         return state
         
-    def in_place_box(self, gripper_position, target_position, hitbox_range_xy=0.02):
+    def in_place_box(self, target_position, hitbox_range_xy=0.02):
         cube_pos = self.cube.get_pos()
-        #Check if the cube position is within the target hitbox
+        # Check if the cube position is within the target hitbox
         lower_bound_xy = target_position[:, :2] - hitbox_range_xy
         upper_bound_xy = target_position[:, :2] + hitbox_range_xy
-        lower_bound_z = torch.tensor(cube_size[2]/3 + target_size[2], device=self.device)
-        upper_bound_z = torch.tensor((2*cube_size[2])/3 + target_size[2], device=self.device)
+        
+        # Fix the z bounds with proper tensor shapes
+        lower_bound_z = torch.full((self.num_envs,), target_size[2], device=self.device)
+        upper_bound_z = torch.full((self.num_envs,), cube_size[2] + target_size[2], device=self.device)
 
-        # Check if gripper is within the hitbox
         in_range_xy = torch.all((cube_pos[:, :2] >= lower_bound_xy) &
-        (cube_pos[:, :2] <= upper_bound_xy), dim=1)
+                              (cube_pos[:, :2] <= upper_bound_xy), dim=1)
         in_range_z = (cube_pos[:, 2] >= lower_bound_z) & (cube_pos[:, 2] <= upper_bound_z)
         
         in_hitbox = in_range_xy & in_range_z
-
+        return in_hitbox
+    
+    def in_end_position(self, target_position, gripper_position, target_offset, hover_offset, hitbox_range_xy=0.05):
+        # Check if the gripper position is within the target hitbox
+        lower_bound_xy = target_position[:, :2] - hitbox_range_xy
+        upper_bound_xy = target_position[:, :2] + hitbox_range_xy
+        
+        # Fix tensor dimensions
+        lower_bound_z = torch.full((self.num_envs,), target_size[2], device=self.device)
+        
+        # Fix this calculation to avoid direct tensor addition with incompatible shapes
+        # We need to compute an upper bound for each environment
+        z_offset = target_offset[2] + hover_offset[2]
+        upper_bound_z = target_position[:, 2] + z_offset
+        
+        in_range_xy = torch.all((gripper_position[:, :2] >= lower_bound_xy) &
+                              (gripper_position[:, :2] <= upper_bound_xy), dim=1)
+        in_range_z = (gripper_position[:, 2] >= lower_bound_z) & (gripper_position[:, 2] <= upper_bound_z)
+        
+        in_hitbox = in_range_xy & in_range_z
         return in_hitbox
         
     def step(self, actions):
         # Get positions and orientations for all environments
         block_position = self.cube.get_pos()
         block_quaternion = self.cube.get_quat()
+        target_position = self.target.get_pos()
         
         # Calculate offset based on cube and target sizes
-        target_offset = torch.tensor([0.0, 0.0, cube_size[2]/2 + target_size[2]/2], device=self.device)
-        target_position = self.target.get_pos() + target_offset
+        end_effector_offset =  torch.tensor([-0.05, -0.05, 0.1], device=self.device) + cube_size[2]
+        target_offset = torch.tensor([0.0, 0.0, target_size[2]/2], device=self.device)
         end_effector = self.franka.get_link('hand')
+        hover_offset = torch.tensor([0.0, 0.0, 0.3], device=self.device)
 
         # Create action masks for all environments
         action_mask_0 = actions == 0  # Move above cube
@@ -127,17 +148,16 @@ class PickPlaceFixedBlockEnv:
         pos = torch.zeros((self.num_envs, 3), device=self.device)
 
                 # Set target positions based on action masks
-        pos[action_mask_0] = block_position[action_mask_0] #- offset
-        pos[action_mask_1] = block_position[action_mask_1] + torch.tensor([0.0, 0.0, 0.3], device=self.device)
-        pos[action_mask_2] = target_position[action_mask_2] + torch.tensor([0.0, 0.0, 0.3], device=self.device)
-        pos[action_mask_3] = target_position[action_mask_3]
-        pos[action_mask_4] = target_position[action_mask_4] + torch.tensor([0.0, 0.0, 0.3], device=self.device)
-
+        pos[action_mask_0] = block_position[action_mask_0]
+        pos[action_mask_1] = block_position[action_mask_1] + hover_offset
+        pos[action_mask_2] = target_position[action_mask_2] + hover_offset
+        pos[action_mask_3] = target_position[action_mask_3] + target_offset
+        pos[action_mask_4] = target_position[action_mask_4] + target_offset + hover_offset
 
         # Compute inverse kinematics for the target position
         target_qpos = self.franka.inverse_kinematics(
             link=end_effector,
-            pos=pos.cpu().numpy(),
+            pos=(pos + end_effector_offset).cpu().numpy(),
             quat=torch.tensor([0, 1, 0, 0], device=self.device).repeat(self.num_envs, 1).cpu().numpy(),
         )
         target_qpos = torch.tensor(target_qpos, device=self.device)
@@ -157,13 +177,13 @@ class PickPlaceFixedBlockEnv:
         finger_positions[action_mask_3] = torch.tensor([0.0, 0.0], device=self.device)
         finger_positions[action_mask_4] = torch.tensor([0.4, 0.4], device=self.device)
         self.franka.control_dofs_position(finger_positions, self.fingers_dof, self.envs_idx)
-        for i in range(10):
+        for i in range(50):
             self.scene.step()
 
         # Interpolate to the target position
         current_qpos = self.franka.get_qpos().cpu()
 
-        for alpha in np.linspace(0, 1, num=100):  # 100 steps for interpolation
+        for alpha in np.linspace(0, 1, num=200):  # num steps for interpolation (also speed)
             interpolated_qpos = current_qpos + alpha * (qpos.cpu() - current_qpos)
 
             # Control DOFs for all environments (except fingers)
@@ -175,10 +195,14 @@ class PickPlaceFixedBlockEnv:
 
         # Cube distance from target
         cdft = torch.norm(target_position - block_position, dim=1)
-
+        # Cube velocity
+        cv = torch.norm(self.cube.get_vel())
+        # Gripper distance from start position
+        gdfs = torch.norm(gripper_position - torch.tensor(start_cube_pos, device=self.device).repeat(self.num_envs, 1), dim=1)
         # Combine rewards
-        rewards = 1/(cdft + 1)*10
-        dones = self.in_place_box(gripper_position, target_position) & torch.all(self.cube.get_vel() == 0,dim=1)
+        rewards = 1/(gdfs*0.1 + cdft + cv*0.1 + 1)*10
+        dones = self.in_place_box(target_position) & torch.all(self.cube.get_vel() == 0, dim=1)# & \
+#                self.in_end_position(target_position, gripper_position, target_offset, hover_offset)
         return states, rewards, dones
     
 if __name__ == "__main__":
