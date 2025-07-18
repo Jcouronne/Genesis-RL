@@ -9,7 +9,7 @@ target_size = (0.1, 0.1, 0.2)  # size of the target
 class PickPlaceFixedBlockEnv:
     def __init__(self, vis, device, num_envs=1):
         self.device = device
-        self.action_space = 5
+        self.action_space = 6
         self.state_dim = 7
         self.scene = gs.Scene(
             viewer_options=gs.options.ViewerOptions(
@@ -128,28 +128,30 @@ class PickPlaceFixedBlockEnv:
         target_position = torch.tensor(start_target_pos, device=self.device, dtype=torch.float64).unsqueeze(0).repeat(self.num_envs, 1)
         
         # Calculate offset based on cube and target sizes
-        end_effector_offset = torch.tensor([-0.05, -0.05, 0.1], device=self.device, dtype=torch.float64) + cube_size[2]
+        end_effector_offset = torch.tensor([0, 0, 0.12], device=self.device, dtype=torch.float64)
         target_offset = torch.tensor([0.0, 0.0, target_size[2]/2], device=self.device, dtype=torch.float64)
         end_effector = self.franka.get_link('hand')
         hover_offset = torch.tensor([0.0, 0.0, 0.3], device=self.device, dtype=torch.float64)
 
         # Create action masks for all environments
         action_mask_0 = actions == 0  # Move above cube
-        action_mask_1 = actions == 1  # Lift cube
-        action_mask_2 = actions == 2  # Move above target
-        action_mask_3 = actions == 3  # Place cube
-        action_mask_4 = actions == 4  # End position
+        action_mask_1 = actions == 1  # Move to cube
+        action_mask_2 = actions == 2  # Lift cube
+        action_mask_3 = actions == 3  # Move above target
+        action_mask_4 = actions == 4  # Place cube
+        action_mask_5 = actions == 5  # End position
 
         # Initialize qpos tensor for all environments
         qpos = torch.zeros((self.num_envs, 9), device=self.device, dtype=torch.float64)
         pos = torch.zeros((self.num_envs, 3), device=self.device, dtype=torch.float64)
 
         # Set target positions based on action masks - using target_position from above
-        pos[action_mask_0] = block_position[action_mask_0]
-        pos[action_mask_1] = block_position[action_mask_1] + hover_offset
-        pos[action_mask_2] = target_position[action_mask_2] + hover_offset
-        pos[action_mask_3] = target_position[action_mask_3] + target_offset
-        pos[action_mask_4] = target_position[action_mask_4] + hover_offset
+        pos[action_mask_0] = block_position[action_mask_0] + hover_offset
+        pos[action_mask_1] = block_position[action_mask_1]
+        pos[action_mask_2] = block_position[action_mask_2] + hover_offset
+        pos[action_mask_3] = target_position[action_mask_3] + hover_offset
+        pos[action_mask_4] = target_position[action_mask_4] + target_offset
+        pos[action_mask_5] = target_position[action_mask_5] + hover_offset
         # Compute inverse kinematics for the target position
         target_qpos = self.franka.inverse_kinematics(
             link=end_effector,
@@ -164,14 +166,16 @@ class PickPlaceFixedBlockEnv:
         qpos[action_mask_2] = target_qpos[action_mask_2]
         qpos[action_mask_3] = target_qpos[action_mask_3]
         qpos[action_mask_4] = target_qpos[action_mask_4]
+        qpos[action_mask_5] = target_qpos[action_mask_5]
 
         #control fingers first
         finger_positions = torch.full((self.num_envs, 2), 0.04, device=self.device, dtype=torch.float64)
         finger_positions[action_mask_0] = torch.tensor([0.4, 0.4], device=self.device, dtype=torch.float64)
-        finger_positions[action_mask_1] = torch.tensor([0.0, 0.0], device=self.device, dtype=torch.float64)
+        finger_positions[action_mask_1] = torch.tensor([0.4, 0.4], device=self.device, dtype=torch.float64)
         finger_positions[action_mask_2] = torch.tensor([0.0, 0.0], device=self.device, dtype=torch.float64)
         finger_positions[action_mask_3] = torch.tensor([0.0, 0.0], device=self.device, dtype=torch.float64)
-        finger_positions[action_mask_4] = torch.tensor([0.4, 0.4], device=self.device, dtype=torch.float64)
+        finger_positions[action_mask_4] = torch.tensor([0.0, 0.0], device=self.device, dtype=torch.float64)
+        finger_positions[action_mask_5] = torch.tensor([0.4, 0.4], device=self.device, dtype=torch.float64)
         self.franka.control_dofs_position(finger_positions, self.fingers_dof, self.envs_idx)
         for i in range(50):
             self.scene.step()
@@ -210,14 +214,14 @@ class PickPlaceFixedBlockEnv:
         for env_idx in range(self.num_envs):
             if (self.in_place_box(target_position) & cube_at_rest)[env_idx]:
                 print(f"edfs for env {env_idx}: {edfs[env_idx]}")
-                rewards[env_idx] = 1/(edfs[env_idx]*10 + cdft[env_idx]*2 + 1)*100 + cube_at_rest[env_idx]*20
+                rewards[env_idx] = 1/(edfs[env_idx] + cdft[env_idx] + 1)*100 + cube_at_rest[env_idx]*20
                 print(f"Reward for env {env_idx}: {rewards[env_idx]}")
             else:
-                rewards[env_idx] = 1/(cdft[env_idx] + 1)+cdfe[env_idx]
+                rewards[env_idx] = 1/(cdft[env_idx] + 1)
 
         dones = self.in_place_box(target_position) & cube_at_rest & self.in_end_pos(start_target_pos)
         return states, rewards, dones
     
 if __name__ == "__main__":
-    gs.init(backend=gs.gpu, precision="64")  # Changed to 64-bit precision
+    gs.init(backend=gs.gpu, precision="64")
     env = PickPlaceFixedBlockEnv(vis=True, device="cuda")

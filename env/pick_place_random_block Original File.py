@@ -6,19 +6,18 @@ start_cube_pos = (0.65, 0.0, 0.02)
 start_target_pos = (0, 0.65, 0.15)
 cube_size = (0.04, 0.04, 0.04)  # size of the cube
 target_size = (0.1, 0.1, 0.3)  # size of the target
-
 class PickPlaceRandomBlockEnv:
     def __init__(self, vis, device, num_envs=1):
         self.device = device
-        self.action_space = 5
-        self.state_dim = 9
+        self.action_space = 6
+        self.state_dim = 7
         self.scene = gs.Scene(
             viewer_options=gs.options.ViewerOptions(
                 camera_pos=(3, -1, 1.5),
                 camera_lookat=(0.0, 0.0, 0.5),
                 camera_fov=30,
                 res=(960, 640),
-                max_FPS=100,
+                max_FPS=60,
             ),
             sim_options=gs.options.SimOptions(
                 dt=0.01,
@@ -97,9 +96,8 @@ class PickPlaceRandomBlockEnv:
         self.cube.set_quat(quaternions, envs_idx=self.envs_idx)
 
         obs1 = self.cube.get_pos().to(dtype=torch.float64)
-        obs2 = self.target.get_pos().to(dtype=torch.float64)
-        obs3 = (self.franka.get_link("left_finger").get_pos().to(dtype=torch.float64) + self.franka.get_link("right_finger").get_pos().to(dtype=torch.float64)) / 2   
-        state = torch.concat([obs1,obs2,obs3], dim=1)
+        obs2 = self.cube.get_quat().to(dtype=torch.float64)
+        state = torch.concat([obs1, obs2], dim=1)
         return state
         
     def in_place_box(self, target_position, hitbox_range_xy=0.02):
@@ -159,6 +157,7 @@ class PickPlaceRandomBlockEnv:
         # Initialize qpos tensor for all environments
         qpos = torch.zeros((self.num_envs, 9), device=self.device, dtype=torch.float64)
         pos = torch.zeros((self.num_envs, 3), device=self.device, dtype=torch.float64)
+        print(actions)
         # Set target positions based on action masks - using target_position from above
         pos[action_mask_0] = block_position[action_mask_0] + hover_offset
         pos[action_mask_1] = block_position[action_mask_1]
@@ -206,7 +205,7 @@ class PickPlaceRandomBlockEnv:
         
         gripper_position = (self.franka.get_link("left_finger").get_pos().to(dtype=torch.float64) + 
                             self.franka.get_link("right_finger").get_pos().to(dtype=torch.float64)) / 2        
-        states = torch.concat([block_position, target_position, gripper_position], dim=1)    
+        states = torch.concat([block_position, block_quaternion], dim=1)    
 
         start_target_pos = torch.tensor(start_target_pos, device=self.device, dtype=torch.float64).unsqueeze(0).repeat(self.num_envs, 1)
         # Cube distance from target
@@ -225,13 +224,13 @@ class PickPlaceRandomBlockEnv:
         
         # Calculate distance from gripper to start position for environments that are done
         rewards = torch.zeros(self.num_envs, device=self.device, dtype=torch.float64)
-        #for env_idx in range(self.num_envs):
-        #    if (self.in_place_box(target_position) & cube_at_rest)[env_idx]:
-        #        rewards[env_idx] = 1/(edfs[env_idx]*10 + cdft[env_idx]*2 + 1) + cube_at_rest[env_idx]*4
-        #    else:
-        #        rewards[env_idx] = 1/(cdft[env_idx] + 1)*0.5
-        rewards = 1/(cdft + 1)
-        dones = self.in_place_box(target_position) & cube_at_rest# & self.in_end_pos(start_target_pos)
+        for env_idx in range(self.num_envs):
+            if (self.in_place_box(target_position) & cube_at_rest)[env_idx]:
+                rewards[env_idx] = (1/(edfs[env_idx]*10 + cdft[env_idx]*2 + 1))*100 + cube_at_rest[env_idx]*4
+            else:
+                rewards[env_idx] = (1/(cdft[env_idx]*2 + cdfe[env_idx] + 1))*20
+
+        dones = self.in_place_box(target_position) & cube_at_rest & self.in_end_pos(start_target_pos)
         return states, rewards, dones
     
 if __name__ == "__main__":
