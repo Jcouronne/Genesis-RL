@@ -1,0 +1,5 @@
+lr 1e-3
+Gamma 0.85
+clip 0.15
+layers 8
+hd 32

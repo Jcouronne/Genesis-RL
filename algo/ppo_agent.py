@@ -7,9 +7,8 @@ from network.ppo import PPO
 import os
 
 class PPOAgent:
-    def __init__(self, input_dim, output_dim, lr, gamma, clip_epsilon, num_layers, device, load=False, num_envs=1, hidden_dim=64, checkpoint_path=None):
+    def __init__(self, input_dim, output_dim, lr, gamma, clip_epsilon, num_layers, hidden_dim, device, load=False, checkpoint_path=None):
         self.device = device
-        self.num_envs = num_envs
         
         # Create model and set precision based on the current gs.init precision
         self.model = PPO(input_dim, output_dim, hidden_dim=hidden_dim, num_layers=num_layers).to(device)
@@ -53,31 +52,37 @@ class PPOAgent:
         with torch.no_grad():
             logits = self.model(state)
         probs = nn.functional.softmax(logits, dim=-1)
+
         dist = Categorical(probs)
         action = dist.sample()
         return action
 
     def train(self, states, actions, rewards, dones):
-        # Convert all inputs to the right precision
-        states = torch.stack(states).to(dtype=self.dtype)
-        actions = torch.stack(actions).to(dtype=self.dtype)
-        rewards = torch.stack(rewards).to(dtype=self.dtype)
-        dones = torch.stack(dones).to(dtype=torch.bool)
+        # Set to training mode
+        self.model.train()
+        
+        # Convert all inputs with consistent device placement
+        states = torch.stack(states).to(dtype=self.dtype, device=self.device)
+        actions = torch.stack(actions).to(dtype=torch.long, device=self.device)
+        rewards = torch.stack(rewards).to(dtype=self.dtype, device=self.device)
+        dones = torch.stack(dones).to(dtype=torch.bool, device=self.device)
         
         # Calculate discounted rewards
         discounted_rewards = []
         R = 0
-        for reward in reversed(rewards):
-            R = reward + self.gamma * R * (~dones[-1])
+        for i, reward in enumerate(reversed(rewards)):
+            done_idx = len(rewards) - 1 - i
+            R = reward + self.gamma * R * (~dones[done_idx])
             discounted_rewards.insert(0, R)
 
-        discounted_rewards_tensor = torch.stack(discounted_rewards).to(self.device)
+        discounted_rewards_tensor = torch.stack(discounted_rewards).to(device=self.device)
 
-        # Normalize the rewards
+        # Normalize advantages
         advantages = discounted_rewards_tensor - discounted_rewards_tensor.mean()
+        advantages = advantages / (advantages.std() + 1e-8)
         
         # Update policy using PPO
-        for _ in range(10):  # Number of epochs for each batch update
+        for epoch in range(3):
             logits_old = self.model(states).detach()
             probs_old = nn.functional.softmax(logits_old, dim=-1)
             
@@ -89,6 +94,11 @@ class PPOAgent:
 
             ratio = dist_new.log_prob(actions) - dist_old.log_prob(actions)
             ratio = ratio.exp()
+            
+            # Early stopping check
+            if ratio.max() > 2.0 or ratio.min() < 0.5:
+                print(f"Early stopping at epoch {epoch}")
+                break
 
             # Calculate surrogate loss
             surrogate_loss_1 = ratio * advantages
@@ -96,7 +106,11 @@ class PPOAgent:
             
             loss = -torch.min(surrogate_loss_1, surrogate_loss_2).mean()
 
-            # Perform optimization step
+            # Optimization with gradient clipping
             self.optimizer.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.5)
             self.optimizer.step()
+    
+        # Set back to eval mode for action selection
+        self.model.eval()

@@ -10,7 +10,7 @@ target_size = (0.1, 0.1, 0.3)  # size of the target
 class PickPlaceRandomBlockEnv:
     def __init__(self, vis, device, num_envs=1):
         self.device = device
-        self.action_space = 5
+        self.action_space = 6
         self.state_dim = 9
         self.scene = gs.Scene(
             viewer_options=gs.options.ViewerOptions(
@@ -50,7 +50,9 @@ class PickPlaceRandomBlockEnv:
 
         self.num_envs = num_envs
         self.scene.build(n_envs=self.num_envs)
+        #self.scene.build(n_envs=self.num_envs, env_spacing=(1.0, 1.0))
         self.envs_idx = np.arange(self.num_envs)
+        self.previous_actions = torch.zeros(self.num_envs, device=self.device, dtype=torch.long)
         self.build_env()
     
     def build_env(self):
@@ -78,20 +80,16 @@ class PickPlaceRandomBlockEnv:
 
     def reset(self):
         self.build_env()
+        R_min, R_max = 0.5, 0.7
         ## random cube position
         cube_pos = np.array(start_cube_pos)
-        R_min, R_max = 0.4, 0.7
-        theta_min, theta_max = np.pi/10, -np.pi/10
-        random_r = np.random.uniform(R_min, R_max, self.num_envs)
-        random_theta = np.random.uniform(theta_min, theta_max, self.num_envs)
-        random_x = random_r * np.cos(random_theta)
-        random_y = random_r * np.sin(random_theta)
-        cube_pos = np.column_stack((random_x, random_y, np.full(self.num_envs, cube_pos[2])))
-        ## random cube orientation
-        #fixed_roll = 0
-        #fixed_pitch = 0
-        #random_yaws = np.random.uniform(0, 2 * np.pi, size=self.num_envs)
-        #quaternions = np.array([euler_to_quaternion(fixed_roll, fixed_pitch, yaw) for yaw in random_yaws])
+        cube_theta_min, cube_theta_max = np.pi/5, -np.pi/5
+        cube_random_r = np.random.uniform(R_min, R_max, self.num_envs)
+        cube_random_theta = np.random.uniform(cube_theta_min, cube_theta_max, self.num_envs)
+        cube_random_x = cube_random_r * np.cos(cube_random_theta)
+        cube_random_y = cube_random_r * np.sin(cube_random_theta)
+        cube_pos = np.column_stack((cube_random_x, cube_random_y, np.full(self.num_envs, cube_pos[2])))
+
         quaternions = torch.tensor([1, 0, 0, 0], device=self.device, dtype=torch.float64).unsqueeze(0).repeat(self.num_envs, 1)
         self.cube.set_pos(cube_pos, envs_idx=self.envs_idx)
         self.cube.set_quat(quaternions, envs_idx=self.envs_idx)
@@ -127,7 +125,7 @@ class PickPlaceRandomBlockEnv:
         
         # Fix the z bounds with proper tensor shapes
         lower_bound_z = start_target_pos[:, 2] + 0.4
-        upper_bound_z = start_target_pos[:, 2] + hitbox_z_height 
+        upper_bound_z = start_target_pos[:, 2] + hitbox_z_height
 
         in_range_xy = torch.all((effector_pos[:, :2] >= lower_bound_xy) &
                               (effector_pos[:, :2] <= upper_bound_xy), dim=1)
@@ -136,17 +134,16 @@ class PickPlaceRandomBlockEnv:
         in_hitbox = in_range_xy & in_range_z
         return in_hitbox
         
-    def step(self, actions, start_target_pos=start_target_pos):
+    def step(self, actions):
         # Get positions and orientations for all environments
         block_position = self.cube.get_pos().to(dtype=torch.float64)
-        block_quaternion = self.cube.get_quat().to(dtype=torch.float64)
-        target_position = torch.tensor(start_target_pos, device=self.device, dtype=torch.float64).unsqueeze(0).repeat(self.num_envs, 1)
-        
+        target_position = self.target.get_pos().to(dtype=torch.float64)
+
         # Calculate offset based on cube and target sizes
         end_effector_offset = torch.tensor([0, 0, 0.11], device=self.device, dtype=torch.float64)
-        target_offset = torch.tensor([0.0, 0.0, (target_size[2]/2)+cube_size[2]/2], device=self.device, dtype=torch.float64)
+        target_offset = torch.tensor([0.0, 0.0, (target_size[2]/2)+cube_size[2]], device=self.device, dtype=torch.float64)
         end_effector = self.franka.get_link('hand')
-        hover_offset = torch.tensor([0.0, 0.0, 0.3], device=self.device, dtype=torch.float64)
+        hover_offset = torch.tensor([0.0, 0.0, 0.25], device=self.device, dtype=torch.float64)
 
         # Create action masks for all environments
         action_mask_0 = actions == 0  # Move above cube
@@ -183,7 +180,7 @@ class PickPlaceRandomBlockEnv:
         qpos[action_mask_5] = target_qpos[action_mask_5]
 
         #control fingers first
-        finger_positions = torch.full((self.num_envs, 2), 0.04, device=self.device, dtype=torch.float64)
+        finger_positions = torch.full((self.num_envs, 2), 0.0, device=self.device, dtype=torch.float64)
         finger_positions[action_mask_0] = torch.tensor([0.4, 0.4], device=self.device, dtype=torch.float64)
         finger_positions[action_mask_1] = torch.tensor([0.4, 0.4], device=self.device, dtype=torch.float64)
         finger_positions[action_mask_2] = torch.tensor([0.0, 0.0], device=self.device, dtype=torch.float64)
@@ -191,12 +188,12 @@ class PickPlaceRandomBlockEnv:
         finger_positions[action_mask_4] = torch.tensor([0.0, 0.0], device=self.device, dtype=torch.float64)
         finger_positions[action_mask_5] = torch.tensor([0.4, 0.4], device=self.device, dtype=torch.float64)
         self.franka.control_dofs_position(finger_positions, self.fingers_dof, self.envs_idx)
-        for i in range(50):
+        for i in range(100):
             self.scene.step()
 
         # Interpolate to the target position
         current_qpos = self.franka.get_qpos().cpu().to(dtype=torch.float64)
-        interpolation_steps = 300  # Number of steps for interpolation (also speed)
+        interpolation_steps = 400  # Number of steps for interpolation (also speed)
         for alpha in np.linspace(0, 1, num=interpolation_steps):
             interpolated_qpos = current_qpos + alpha * (qpos.cpu() - current_qpos)
 
@@ -208,13 +205,10 @@ class PickPlaceRandomBlockEnv:
                             self.franka.get_link("right_finger").get_pos().to(dtype=torch.float64)) / 2        
         states = torch.concat([block_position, target_position, gripper_position], dim=1)    
 
-        start_target_pos = torch.tensor(start_target_pos, device=self.device, dtype=torch.float64).unsqueeze(0).repeat(self.num_envs, 1)
         # Cube distance from target
         cdft = torch.norm((target_position + target_offset) - block_position, dim=1)
-        # Cube distance from effector
-        cdfe = torch.norm(gripper_position - block_position, dim=1)
         # Effector distance from end position
-        edfs = torch.norm(gripper_position - (start_target_pos + hover_offset), dim=1)
+        edfs = torch.norm(gripper_position - (target_position + hover_offset), dim=1)
         # Get cube velocity and calculate its norm for each environment
         cube_velocity = torch.norm(self.cube.get_vel().to(dtype=torch.float64), dim=1)  # Shape is [num_envs, 3]
 
@@ -223,15 +217,20 @@ class PickPlaceRandomBlockEnv:
         # Check if cube is at rest by comparing velocity norms
         cube_at_rest = torch.isclose(cube_velocity, zero_vel, atol=0.01)
         
+        # Calculate action number for each environment
+        action_nbr = torch.zeros(self.num_envs, device=self.device, dtype=torch.float64)
+        for env in range(self.num_envs):
+            if actions[env] != self.previous_actions[env]:
+                action_nbr[env] += 1
+        self.previous_actions = actions.clone()
+
+
         # Calculate distance from gripper to start position for environments that are done
         rewards = torch.zeros(self.num_envs, device=self.device, dtype=torch.float64)
-        #for env_idx in range(self.num_envs):
-        #    if (self.in_place_box(target_position) & cube_at_rest)[env_idx]:
-        #        rewards[env_idx] = 1/(edfs[env_idx]*10 + cdft[env_idx]*2 + 1) + cube_at_rest[env_idx]*4
-        #    else:
-        #        rewards[env_idx] = 1/(cdft[env_idx] + 1)*0.5
-        rewards = 1/(cdft + 1)
-        dones = self.in_place_box(target_position) & cube_at_rest# & self.in_end_pos(start_target_pos)
+        rewards = 1/(cdft + 1)*10
+        dones = self.in_place_box(target_position) & cube_at_rest
+        rewards -= 0.1
+        rewards[dones] = 100
         return states, rewards, dones
     
 if __name__ == "__main__":
