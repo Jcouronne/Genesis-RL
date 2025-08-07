@@ -9,7 +9,7 @@ from datetime import datetime
 import time
 import sys
 
-num_episodes = 200
+num_episodes = 50
 lr=1e-3
 gamma=0.85
 clip_epsilon=0.2
@@ -74,7 +74,7 @@ def run(env, agent, num_episodes):
         done_array = torch.tensor([False] * env.num_envs).to(args.device)
         states, actions, rewards, dones = [], [], [], []
     
-        for step in range(10):
+        for step in range(15):
             action = agent.select_action(state)
             next_state, reward, done = env.step(action)
 
@@ -90,7 +90,7 @@ def run(env, agent, num_episodes):
             if done_array.all():
                 break
             
-            if step==5 and all(torch.equal(action, actions[0]) for action in actions) :
+            if step==15 and all(torch.equal(action, actions[0]) for action in actions) :
                 print("Network collapsed")
                 sys.exit(1)
                 
@@ -140,9 +140,6 @@ def run(env, agent, num_episodes):
             # Update display
             plt.tight_layout()
             plt.pause(0.01)  # Small pause to update display
-            
-            # Save checkpoint
-            agent.save_checkpoint()
 
     # Turn off interactive mode and save final plot
     plt.ioff()
@@ -167,8 +164,10 @@ def run(env, agent, num_episodes):
     axis[1].legend()
     axis[1].grid(True, alpha=0.3)
     
+    done_avg = torch.round(sum(dones_stats)/(len(episode_stats)))
+    
     # Set final title
-    plt.suptitle(f"Final Results - LR: {lr}, Gamma: {gamma}, Clip Epsilon: {clip_epsilon}, Layers: {num_layers}, Hidden Dim: {hidden_dim}")
+    plt.suptitle(f"Final Results - LR: {lr}, Gamma: {gamma}, Clip Epsilon: {clip_epsilon}, Layers: {num_layers}, Hidden Dim: {hidden_dim}, Average Done(%): {done_avg}")
 
     # Save final plot
     ts = time.time()
