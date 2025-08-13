@@ -8,12 +8,27 @@ import os
 
 class PPOAgent:
     def __init__(self, input_dim, output_dim, lr, gamma, clip_epsilon, num_layers, hidden_dim, device, load=False, checkpoint_path=None):
-        self.device = device
+        """
+        Initialize PPO Agent.
         
-        # Create model and set precision based on the current gs.init precision
+        Args:
+            input_dim (int): Dimension of state space
+            output_dim (int): Dimension of action space
+            lr (float): Learning rate for optimizer
+            gamma (float): Discount factor for rewards
+            clip_epsilon (float): PPO clipping parameter
+            num_layers (int): Number of hidden layers in network
+            hidden_dim (int): Dimension of hidden layers
+            device (str): Device to run computations on ('cuda', 'cpu', 'mps')
+            load (bool): Whether to load from checkpoint
+            checkpoint_path (str): Path to checkpoint file
+        """
+        self.device = device
+
+        # Create model
         self.model = PPO(input_dim, output_dim, hidden_dim=hidden_dim, num_layers=num_layers).to(device)
         
-        # Get the current precision from genesis settings
+        # Set tensor precision to 64
         self.dtype = torch.float64
         
         # Convert model parameters to the correct precision
@@ -46,18 +61,38 @@ class PPOAgent:
         print(f"Checkpoint loaded from {self.checkpoint_path}")
 
     def select_action(self, state):
+        """
+        Select action using current policy.
+        
+        Args:
+            state (torch.Tensor): Current state observation
+            
+        Returns:
+            torch.Tensor: Selected action indices
+        """
         # Ensure state has the right precision
         state = state.to(dtype=self.dtype)
         
+        # Get action probabilities from policy network
         with torch.no_grad():
             logits = self.model(state)
         probs = nn.functional.softmax(logits, dim=-1)
 
+        # Sample action from categorical distribution
         dist = Categorical(probs)
         action = dist.sample()
         return action
 
     def train(self, states, actions, rewards, dones):
+        """
+        Train the PPO agent using collected experience.
+        
+        Args:
+            states (list): List of state tensors
+            actions (list): List of action tensors
+            rewards (list): List of reward tensors
+            dones (list): List of done flags
+        """
         # Set to training mode
         self.model.train()
         
@@ -95,15 +130,16 @@ class PPOAgent:
             ratio = dist_new.log_prob(actions) - dist_old.log_prob(actions)
             ratio = ratio.exp()
             
-            # Early stopping check
+            # Early stopping if ratio becomes too extreme
             if ratio.max() > 2.0 or ratio.min() < 0.5:
                 print(f"Early stopping at epoch {epoch}")
                 break
 
-            # Calculate surrogate loss
+            # Calculate PPO clipped surrogate loss
             surrogate_loss_1 = ratio * advantages
             surrogate_loss_2 = torch.clamp(ratio, 1 - self.clip_epsilon, 1 + self.clip_epsilon) * advantages
             
+            # Take minimum to be conservative (PPO objective)
             loss = -torch.min(surrogate_loss_1, surrogate_loss_2).mean()
 
             # Optimization with gradient clipping

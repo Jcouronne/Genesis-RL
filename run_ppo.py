@@ -34,14 +34,11 @@ def create_environment(task_name):
         raise ValueError(f"Task '{task_name}' is not recognized.")
 
 def train_ppo(args, lr, gamma, clip_epsilon, num_layers, hidden_dim):
-    if args.load_path == "default":
+    # Load file
+    if args.load_path is not None:
         load = True
         checkpoint_path = f"logs/{args.task}_ppo_checkpoint_released.pth"
         print(f"Loading default checkpoint from {checkpoint_path}")
-    elif args.load_path: 
-        load = True
-        checkpoint_path = args.load_path
-        print(f"Loading checkpoint from {checkpoint_path}")
     else:
         load = False
         checkpoint_path = f"logs/{args.task}_ppo_checkpoint.pth"
@@ -74,7 +71,7 @@ def run(env, agent, num_episodes):
         done_array = torch.tensor([False] * env.num_envs).to(args.device)
         states, actions, rewards, dones = [], [], [], []
     
-        for step in range(10):
+        for step in range(10): # Number of actions per episode
             action = agent.select_action(state)
             next_state, reward, done = env.step(action)
 
@@ -146,12 +143,9 @@ def run(env, agent, num_episodes):
 
     # Turn off interactive mode and save final plot
     plt.ioff()
-    
-    # Final plot with all data
     axis[0].clear()
     axis[1].clear()
     
-    # Plot final rewards
     axis[0].plot(episode_stats, rewards_stats, color='b', label='Reward')
     axis[0].set_title('Final Rewards')
     axis[0].set_xlabel('Episode')
@@ -159,7 +153,7 @@ def run(env, agent, num_episodes):
     axis[0].legend()
     axis[0].grid(True, alpha=0.3)
     
-    # Plot final dones
+    # Plot Dones
     axis[1].plot(episode_stats, dones_stats, color='r', label='Done %')
     axis[1].set_title('Final Dones (%)')
     axis[1].set_xlabel('Episode')
@@ -167,7 +161,6 @@ def run(env, agent, num_episodes):
     axis[1].legend()
     axis[1].grid(True, alpha=0.3)
     
-    # Set final title
     plt.suptitle(f"Final Results - LR: {lr}, Gamma: {gamma}, Clip Epsilon: {clip_epsilon}, Layers: {num_layers}, Hidden Dim: {hidden_dim}")
 
     # Save final plot
@@ -179,7 +172,7 @@ def run(env, agent, num_episodes):
 def arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("-v", "--vis", action="store_true", default=False, help="Enable visualization") 
-    parser.add_argument("-l", "--load_path", type=str, nargs='?', default=None, help="Path for loading model from checkpoint") 
+    parser.add_argument("-l", "--load_path", action="store_const", const="default", default=None, help="Load model from default checkpoint path") 
     parser.add_argument("-n", "--num_envs", type=int, default=1, help="Number of environments to create") 
     parser.add_argument("-b", "--batch_size", type=int, default=None, help="Batch size for training")
     parser.add_argument("-t", "--task", type=str, default="GraspFixedBlock", help="Task to train on")

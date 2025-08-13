@@ -134,7 +134,6 @@ def run(env, agent, num_episodes):
             axis[1].legend()
             axis[1].grid(True, alpha=0.3)
             
-            # Set a common title for the entire figure
             plt.suptitle(f"Episode {episode} - LR: {lr}, Gamma: {gamma}, Clip Epsilon: {clip_epsilon}, Layers: {num_layers}, Hidden Dim: {hidden_dim}")
             
             # Update display
@@ -143,12 +142,9 @@ def run(env, agent, num_episodes):
 
     # Turn off interactive mode and save final plot
     plt.ioff()
-    
-    # Final plot with all data
     axis[0].clear()
     axis[1].clear()
     
-    # Plot final rewards
     axis[0].plot(episode_stats, rewards_stats, color='b', label='Reward')
     axis[0].set_title('Final Rewards')
     axis[0].set_xlabel('Episode')
@@ -156,7 +152,7 @@ def run(env, agent, num_episodes):
     axis[0].legend()
     axis[0].grid(True, alpha=0.3)
     
-    # Plot final dones
+    # Plot Dones
     axis[1].plot(episode_stats, dones_stats, color='r', label='Done %')
     axis[1].set_title('Final Dones (%)')
     axis[1].set_xlabel('Episode')
@@ -166,7 +162,6 @@ def run(env, agent, num_episodes):
     
     done_avg = torch.round(sum(dones_stats)/(len(episode_stats)))
     
-    # Set final title
     plt.suptitle(f"Final Results - LR: {lr}, Gamma: {gamma}, Clip Epsilon: {clip_epsilon}, Layers: {num_layers}, Hidden Dim: {hidden_dim}, Average Done(%): {done_avg}")
 
     # Save final plot
