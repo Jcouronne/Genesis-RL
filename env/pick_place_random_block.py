@@ -117,7 +117,7 @@ class PickPlaceRandomBlockEnv:
         in_hitbox = in_range_xy & in_range_z
         return in_hitbox
 
-    def in_end_pos(self, start_target_pos, hitbox_range_xy=0.02, hitbox_z_height=0.1):
+    def in_end_pos(self, start_target_pos, hitbox_range_xy=0.02, hitbox_z_height=0.1): #not used
         effector_pos = self.end_effector.get_pos().to(dtype=torch.float64)
         # Check if the cube position is within the target hitbox
         lower_bound_xy = start_target_pos[:, :2] - hitbox_range_xy

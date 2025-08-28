@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 import time
 import sys
+import numpy as np
 
 num_episodes = 50
 lr=1e-3
@@ -63,6 +64,9 @@ def run(env, agent, num_episodes):
     rewards_stats, dones_stats, episode_stats = [], [], []
     all_states, all_actions, all_rewards, all_dones = [], [], [], []
 
+    # Add variance tracking
+    window_size = 10  # Rolling window for variance calculation
+
     # Setup interactive plotting
     plt.ion()  # Turn on interactive mode
     figure, axis = plt.subplots(1, 2, figsize=(12, 5))
@@ -107,30 +111,67 @@ def run(env, agent, num_episodes):
 
         # Store episode statistics
         episode_stats.append(episode)
-        rewards_stats.append(torch.sum(total_reward.cpu())/(env.num_envs*5))
-        done = torch.sum(done_array.cpu())/env.num_envs*100
-        dones_stats.append(done)
+        reward_val = torch.sum(total_reward.cpu())/(env.num_envs*5)
+        done_val = torch.sum(done_array.cpu())/env.num_envs*100
+        
+        rewards_stats.append(reward_val)
+        dones_stats.append(done_val)
+        
         print(f"Episode {episode}, Total Reward: {total_reward}")
         
         # Update graph every 5 episodes
         if episode % 5 == 0 and episode > 0:
+            # Calculate variance/std for error bands
+            rewards_std = []
+            dones_std = []
+            
+            for i in range(len(episode_stats)):
+                # Get window around current episode
+                start_idx = max(0, i - window_size//2)
+                end_idx = min(len(rewards_stats), i + window_size//2 + 1)
+                
+                if end_idx - start_idx > 1:  # Need at least 2 points for std
+                    reward_window = rewards_stats[start_idx:end_idx]
+                    done_window = dones_stats[start_idx:end_idx]
+                    
+                    rewards_std.append(torch.tensor(reward_window).std().item())
+                    dones_std.append(torch.tensor(done_window).std().item())
+                else:
+                    rewards_std.append(0)
+                    dones_std.append(0)
+            
+            # Convert to numpy for easier manipulation
+            episodes_np = np.array(episode_stats)
+            rewards_np = np.array(rewards_stats)
+            rewards_std_np = np.array(rewards_std)
+            dones_np = np.array(dones_stats)
+            dones_std_np = np.array(dones_std)
+            
             # Clear previous plots
             axis[0].clear()
             axis[1].clear()
             
-            # Plot rewards
-            axis[0].plot(episode_stats, rewards_stats, color='b', label='Reward')
-            axis[0].set_title('Rewards')
+            # Plot rewards with filled variance bands
+            axis[0].plot(episodes_np, rewards_np, color='blue', linewidth=2, label='Rewards')
+            axis[0].fill_between(episodes_np, 
+                               rewards_np - rewards_std_np, 
+                               rewards_np + rewards_std_np, 
+                               color='blue', alpha=0.3, label='±Sigma')
+            axis[0].set_title('Rewards with Variance Band')
             axis[0].set_xlabel('Episode')
             axis[0].set_ylabel('Reward')
             axis[0].legend()
             axis[0].grid(True, alpha=0.3)
             
-            # Plot dones
-            axis[1].plot(episode_stats, dones_stats, color='r', label='Done %')
-            axis[1].set_title('Dones (%)')
+            # Plot dones with filled variance bands
+            axis[1].plot(episodes_np, dones_np, color='red', linewidth=2, label='Done %')
+            axis[1].fill_between(episodes_np, 
+                               dones_np - dones_std_np, 
+                               dones_np + dones_std_np, 
+                               color='red', alpha=0.3, label='±Sigma')
+            axis[1].set_title('Dones (%) with Variance Band')
             axis[1].set_xlabel('Episode')
-            axis[1].set_ylabel('Done')
+            axis[1].set_ylabel('Done %')
             axis[1].legend()
             axis[1].grid(True, alpha=0.3)
             
@@ -140,23 +181,58 @@ def run(env, agent, num_episodes):
             plt.tight_layout()
             plt.pause(0.01)  # Small pause to update display
 
-    # Turn off interactive mode and save final plot
+    # Turn off interactive mode and create final plot with variance bands
     plt.ioff()
+    
+    # Calculate final variance
+    final_rewards_std = []
+    final_dones_std = []
+    
+    for i in range(len(episode_stats)):
+        start_idx = max(0, i - window_size//2)
+        end_idx = min(len(rewards_stats), i + window_size//2 + 1)
+        
+        if end_idx - start_idx > 1:
+            reward_window = rewards_stats[start_idx:end_idx]
+            done_window = dones_stats[start_idx:end_idx]
+            
+            final_rewards_std.append(torch.tensor(reward_window).std().item())
+            final_dones_std.append(torch.tensor(done_window).std().item())
+        else:
+            final_rewards_std.append(0)
+            final_dones_std.append(0)
+    
+    # Convert to numpy for final plots
+    episodes_np = np.array(episode_stats)
+    rewards_np = np.array(rewards_stats)
+    final_rewards_std_np = np.array(final_rewards_std)
+    dones_np = np.array(dones_stats)
+    final_dones_std_np = np.array(final_dones_std)
+    
     axis[0].clear()
     axis[1].clear()
     
-    axis[0].plot(episode_stats, rewards_stats, color='b', label='Reward')
-    axis[0].set_title('Final Rewards')
+    # Final plots with variance bands
+    axis[0].plot(episodes_np, rewards_np, color='blue', linewidth=2, label='Rewards')
+    axis[0].fill_between(episodes_np, 
+                       rewards_np - final_rewards_std_np, 
+                       rewards_np + final_rewards_std_np, 
+                       color='blue', alpha=0.3, label='±1 STD')
+    axis[0].set_title('Final Rewards with Variance Band')
     axis[0].set_xlabel('Episode')
     axis[0].set_ylabel('Reward')
     axis[0].legend()
     axis[0].grid(True, alpha=0.3)
     
-    # Plot Dones
-    axis[1].plot(episode_stats, dones_stats, color='r', label='Done %')
-    axis[1].set_title('Final Dones (%)')
+    # Plot Dones with variance bands
+    axis[1].plot(episodes_np, dones_np, color='red', linewidth=2, label='Done %')
+    axis[1].fill_between(episodes_np, 
+                       dones_np - final_dones_std_np, 
+                       dones_np + final_dones_std_np, 
+                       color='red', alpha=0.3, label='±1 STD')
+    axis[1].set_title('Final Dones (%) with Variance Band')
     axis[1].set_xlabel('Episode')
-    axis[1].set_ylabel('Done')
+    axis[1].set_ylabel('Done %')
     axis[1].legend()
     axis[1].grid(True, alpha=0.3)
     
@@ -167,7 +243,8 @@ def run(env, agent, num_episodes):
     # Save final plot
     ts = time.time()
     timestamp = datetime.fromtimestamp(ts).strftime('%Y-%m-%d_%H:%M:%S')
-    plt.savefig("/home/devtex/Documents/Genesis/graphs/" + timestamp + ".png", dpi=300, bbox_inches='tight')
+    os.makedirs("graphs", exist_ok=True)
+    plt.savefig(f"graphs/{timestamp}.png", dpi=300, bbox_inches='tight')
     plt.show()
 
 def arg_parser():

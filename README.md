@@ -1,32 +1,65 @@
-Original repo : https://github.com/RochelleNi/GenesisEnvs
+# Genesis Reinforcement Learning (RL) Framework
 
-## Usage ##
+Genesis engine: https://genesis-world.readthedocs.io/en/latest/index.html
+Original repo: https://github.com/RochelleNi/GenesisEnvs
 
-- Training :
+## Overview
 
-#Run the following to start training :
+This repository implements Proximal Policy Optimization (PPO) reinforcement learning in the Genesis physics engine.
+
+## Installation
+
+### Prerequisites
+
+Genesis officially supports Windows, Mac, and Linux. Since this repository was created using Ubuntu, the following installation guide should be easier to follow if you are on Ubuntu. Otherwise, follow the instructions on the Genesis website linked above.
+
+Creating a Python virtual environment is highly recommended to avoid version mismatches in modules.  
+Tutorial for creating virtual environments: https://www.youtube.com/watch?v=hrnN2BRfIXE
+
+### Installation Steps
+
+1. **Install PyTorch**:
+   Follow the official guide: https://pytorch.org/get-started/locally/ (copy the command you need)
+   
+   Check your CUDA version:
+   ```bash
+   nvidia-smi
+   ```
+
+2. **Install additional dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+## Usage
+
+### Training
+
+Run the following to start training with enhanced visualization:
 ```bash
 python run_ppo.py -n 10
 ```
 
-#To specify a task add "-t taskname", exemple :
+Specify a task with `-t taskname`:
 ```bash
 python run_ppo.py -n 10 -t PickPlaceRandomBlock
 ```
-If no task is specified PickPlaceRandomBlock is used.
+*Default task: PickPlaceRandomBlock*
 
-To load a file, it must be marked with "_released", exemple : PickPlaceRandomBlock_ppo_checkpoint_released.pth
-
-#To load an already trained model add -l :
+Load a pre-trained model with `-l`:
 ```bash
 python run_ppo.py -n 10 -l
 ```
-If no path is specified the "logs" file is used.
+*Note: Files must be marked with "_released" (e.g., PickPlaceRandomBlock_ppo_checkpoint_released.pth)*
 
-- Evaluation :
+### Evaluation
 
-#To run an evaluation use :
+Run evaluation mode:
 ```bash
 python run_ppo_test.py -n 10
 ```
-The file marked as _released in logs will be used
+*Uses the _released checkpoint in logs directory*
+
+## Requirements
+
+See `requirements.txt` for dependencies
