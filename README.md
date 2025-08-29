@@ -1,11 +1,11 @@
 # Genesis Reinforcement Learning (RL) Framework
 
-Genesis engine: https://genesis-world.readthedocs.io/en/latest/index.html
+Genesis engine: https://genesis-world.readthedocs.io/en/latest/index.html <br>
 Original repo: https://github.com/RochelleNi/GenesisEnvs
 
 ## Overview
 
-This repository implements Proximal Policy Optimization (PPO) reinforcement learning in the Genesis physics engine.
+This repository implements Proximal Policy Optimization (PPO) reinforcement learning in the Genesis physics engine. <br>
 Only the scenario "PickPlaceRandomBlock" has been fine tuned and trained.
 
 ## Installation
@@ -51,7 +51,7 @@ Load a pre-trained model with `-l directory`:
 ```bash
 python run_ppo.py -n 10 -l
 ```
-*Default directory: logs folder*
+*Default directory: logs folder* <br>
 *Note: Files must be marked with "_released" (e.g., PickPlaceRandomBlock_ppo_checkpoint_released.pth)*
 
 ### Evaluation
