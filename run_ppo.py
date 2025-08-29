@@ -78,7 +78,7 @@ def run(env, agent, num_episodes):
         done_array = torch.tensor([False] * env.num_envs).to(args.device)
         states, actions, rewards, dones = [], [], [], []
     
-        for step in range(10): # Number of actions per episode
+        for step in range(5): # Number of actions per episode
             action = agent.select_action(state)
             next_state, reward, done = env.step(action)
 
