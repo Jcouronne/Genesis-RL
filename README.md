@@ -20,9 +20,9 @@ Tutorial for creating virtual environments: https://www.youtube.com/watch?v=hrnN
 
 ### Installation Steps
 1. **Install Python**:
-   '''bash
-   apt install python3.10
-   '''
+   ```bash
+   sudo apt install python3.10
+   ```
    *Genesis supports Python: >=3.10,<3.14
 
 3. **Install PyTorch**:
