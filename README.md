@@ -13,7 +13,7 @@ Only the scenario "PickPlaceRandomBlock" has been fine tuned and trained.
 
 ### Prerequisites
 
-Genesis officially supports Windows, Mac, and Linux. Since this repository was created using Ubuntu 22.04.5, the following installation guide should be easier to follow if you are on Ubuntu. Otherwise, follow the instructions on the Genesis website linked above.
+Genesis officially supports Windows, Mac, and Linux. Since this repository was created using Ubuntu 22.04.5, the following installation guide should be easier to follow if you are on Ubuntu. Otherwise, follow the instructions on the Genesis website : https://genesis-world.readthedocs.io/en/latest/user_guide/overview/installation.html
 
 Creating a Python virtual environment is highly recommended to avoid version mismatches in modules.  
 Tutorial for creating virtual environments: https://www.youtube.com/watch?v=hrnN2BRfIXE
@@ -23,9 +23,9 @@ Tutorial for creating virtual environments: https://www.youtube.com/watch?v=hrnN
    ```bash
    sudo apt install python3.10
    ```
-   *Genesis supports Python: >=3.10,<3.14
+   *Genesis supports Python: >=3.10,<3.14*
 
-3. **Install PyTorch**:
+2. **Install PyTorch**:
    Follow the official guide: https://pytorch.org/get-started/locally/ (copy the command you need)
    
    Check your CUDA version:
@@ -33,7 +33,7 @@ Tutorial for creating virtual environments: https://www.youtube.com/watch?v=hrnN
    nvidia-smi
    ```
 
-4. **Install additional dependencies**:
+3. **Install additional dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
@@ -42,7 +42,7 @@ Tutorial for creating virtual environments: https://www.youtube.com/watch?v=hrnN
 
 ### Training
 
-Run the following to start training with enhanced visualization:
+Run the following to start training:
 ```bash
 python run_ppo.py -n 30
 ```
