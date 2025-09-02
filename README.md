@@ -6,7 +6,7 @@ Original repo: https://github.com/RochelleNi/GenesisEnvs
 ## Overview
 
 This repository implements Proximal Policy Optimization (PPO) reinforcement learning in the Genesis physics engine. <br>
-Only the scenario "PickPlaceRandomBlock" has been fine tuned and trained.
+Note that only the scenario "PickPlaceRandomBlock" has been fine tuned and trained.
 ![](https://github.com/Jcouronne/Genesis-RL/blob/main/graphs/task_video.gif)
 
 ## Installation
