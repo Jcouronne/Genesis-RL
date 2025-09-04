@@ -60,6 +60,9 @@ def train_ppo(args, lr, gamma, clip_epsilon, num_layers, hidden_dim):
         run(env, agent, num_episodes)
 
 def run(env, agent, num_episodes):
+    # Add start time tracking
+    start_time = time.time()
+    
     batch_size = args.batch_size if args.batch_size else 64 * args.num_envs
     rewards_stats, dones_stats, episode_stats = [], [], []
     all_states, all_actions, all_rewards, all_dones = [], [], [], []
@@ -70,6 +73,45 @@ def run(env, agent, num_episodes):
     # Setup interactive plotting
     plt.ion()  # Turn on interactive mode
     figure, axis = plt.subplots(1, 2, figsize=(12, 5))
+    
+    # Save hyperparameters once at the beginning
+    os.makedirs("graphs", exist_ok=True)
+    ts_start = time.time()
+    timestamp_start = datetime.fromtimestamp(ts_start).strftime('%Y-%m-%d_%H:%M:%S')
+    hyperparams_filename = f"graphs/hyperparameters_{timestamp_start}.txt"
+    
+    # Create the main data file for all episodes
+    data_filename = f"graphs/raw_episode_data_{timestamp_start}.txt"
+    
+    with open(hyperparams_filename, 'w') as f:
+        f.write("=== PPO Training Hyperparameters ===\n")
+        f.write(f"Training Started: {timestamp_start}\n\n")
+        f.write(f"Learning Rate: {lr}\n")
+        f.write(f"Gamma: {gamma}\n")
+        f.write(f"Clip Epsilon: {clip_epsilon}\n")
+        f.write(f"Number of Layers: {num_layers}\n")
+        f.write(f"Hidden Dimension: {hidden_dim}\n")
+        f.write(f"Number of Episodes: {num_episodes}\n")
+        f.write(f"Number of Environments: {args.num_envs}\n")
+        f.write(f"Batch Size: {batch_size}\n")
+        f.write(f"Task: {args.task}\n")
+        f.write(f"Device: {args.device}\n")
+    
+    # Initialize the data file with header
+    with open(data_filename, 'w') as f:
+        f.write("=== PPO Raw Episode Data ===\n")
+        f.write(f"Training Started: {timestamp_start}\n")
+        f.write(f"Number of Environments: {args.num_envs}\n\n")
+        
+        # Write header with format: Rewards env 1, Dones env 1, Rewards env 2, Dones env 2...
+        header_parts = []
+        for env_idx in range(args.num_envs):
+            header_parts.append(f"Rewards env {env_idx+1}")
+            header_parts.append(f"Dones env {env_idx+1}")
+        f.write(",".join(header_parts) + "\n")
+    
+    print(f"Hyperparameters saved to: {hyperparams_filename}")
+    print(f"Episode data will be saved to: {data_filename}")
     
     for episode in range(num_episodes):
         state = env.reset()
@@ -118,6 +160,23 @@ def run(env, agent, num_episodes):
         dones_stats.append(done_val)
         
         print(f"Episode {episode}, Total Reward: {total_reward}")
+        
+        # Append current episode data to the main data file
+        with open(data_filename, 'a') as f:
+            # Create row with format: Reward env1, Done env1, Reward env2, Done env2...
+            row_data = []
+            for env_idx in range(args.num_envs):
+                # Sum rewards for this environment across all steps in this episode
+                episode_reward = sum(reward_tensor[env_idx].item() if hasattr(reward_tensor[env_idx], 'item') else reward_tensor[env_idx] for reward_tensor in rewards)
+                # Check if this environment completed the task (any step was done)
+                episode_done = any(done_tensor[env_idx].item() if hasattr(done_tensor[env_idx], 'item') else done_tensor[env_idx] for done_tensor in dones)
+                
+                row_data.append(f"{episode_reward:.6f}")
+                row_data.append(f"{int(episode_done)}")
+            
+            f.write(",".join(row_data) + "\n")
+        
+        print(f"Episode {episode} data appended to: {data_filename}")
         
         # Update graph every 5 episodes
         if episode % 5 == 0 and episode > 0:
@@ -175,7 +234,12 @@ def run(env, agent, num_episodes):
             axis[1].legend()
             axis[1].grid(True, alpha=0.3)
             
-            plt.suptitle(f"Episode {episode} - LR: {lr}, Gamma: {gamma}, Clip Epsilon: {clip_epsilon}, Layers: {num_layers}, Hidden Dim: {hidden_dim}")
+            # Set a common title for the entire figure with running time
+            current_time = time.time()
+            elapsed_time = current_time - start_time
+            elapsed_minutes = int(elapsed_time // 60)
+            elapsed_seconds = int(elapsed_time % 60)
+            plt.suptitle(f"Episode {episode} - Runtime: {elapsed_minutes}m {elapsed_seconds}s - LR: {lr}, Gamma: {gamma}, Clip Epsilon: {clip_epsilon}, Layers: {num_layers}, Hidden Dim: {hidden_dim}")
             
             # Update display
             plt.tight_layout()
@@ -183,6 +247,12 @@ def run(env, agent, num_episodes):
 
     # Turn off interactive mode and create final plot with variance bands
     plt.ioff()
+    
+    # Calculate final running time
+    final_time = time.time()
+    total_elapsed = final_time - start_time
+    total_minutes = int(total_elapsed // 60)
+    total_seconds = int(total_elapsed % 60)
     
     # Calculate final variance
     final_rewards_std = []
@@ -238,19 +308,36 @@ def run(env, agent, num_episodes):
     
     done_avg = torch.round(sum(dones_stats)/(len(episode_stats)))
     
-    plt.suptitle(f"Final Results - LR: {lr}, Gamma: {gamma}, Clip Epsilon: {clip_epsilon}, Layers: {num_layers}, Hidden Dim: {hidden_dim}, Average Done(%): {done_avg}")
+    # Final title with total running time
+    plt.suptitle(f"Final Results - Total Runtime: {total_minutes}m {total_seconds}s - LR: {lr}, Gamma: {gamma}, Clip Epsilon: {clip_epsilon}, Layers: {num_layers}, Hidden Dim: {hidden_dim}, Average Done(%): {done_avg}")
 
     # Save final plot
     ts = time.time()
     timestamp = datetime.fromtimestamp(ts).strftime('%Y-%m-%d_%H:%M:%S')
     os.makedirs("graphs", exist_ok=True)
     plt.savefig(f"graphs/{timestamp}.png", dpi=300, bbox_inches='tight')
+    
+    # Save final comprehensive training data
+    final_data_filename = f"graphs/final_raw_data_{timestamp}.txt"
+    with open(final_data_filename, 'w') as f:
+        f.write("=== FINAL PPO Raw Training Data ===\n")
+        f.write(f"Timestamp: {timestamp}\n")
+        f.write(f"Total Episodes: {num_episodes}\n")
+        f.write(f"Total Runtime: {total_minutes}m {total_seconds}s\n")
+        f.write(f"Training Efficiency: {total_elapsed/num_episodes:.2f} seconds per episode\n\n")
+        
+        f.write("=== Complete Raw Episode Data ===\n")
+        f.write("Episode,Reward,CompletionRate(%)\n")
+        for i, ep in enumerate(episode_stats):
+            f.write(f"{ep},{rewards_stats[i]:.4f},{dones_stats[i]:.2f}\n")
+    
+    print(f"Final raw training data saved to: {final_data_filename}")
     plt.show()
 
 def arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("-v", "--vis", action="store_true", default=False, help="Enable visualization") 
-    parser.add_argument("-l", "--load_path", type=str, nargs='?', default=None, help="Path for loading model from checkpoint") 
+    parser.add_argument("-l", "--load_path", action="store_const", const="default", default=None, help="Load model from default checkpoint path") 
     parser.add_argument("-n", "--num_envs", type=int, default=1, help="Number of environments to create") 
     parser.add_argument("-b", "--batch_size", type=int, default=None, help="Batch size for training")
     parser.add_argument("-t", "--task", type=str, default="GraspFixedBlock", help="Task to train on")
