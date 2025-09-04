@@ -44,19 +44,19 @@ Tutorial for creating virtual environments: https://www.youtube.com/watch?v=hrnN
 
 Run the following to start training:
 ```bash
-python run_ppo.py -n 30
+python3 run_ppo.py -n 30
 ```
 *Use -n int to choose the number of environments running in parallel*
 
 Specify a task with `-t taskname`:
 ```bash
-python run_ppo.py -n 30 -t PickPlaceRandomBlock
+python3 run_ppo.py -n 30 -t PickPlaceRandomBlock
 ```
 *Default task: PickPlaceRandomBlock*
 
 Load a pre-trained model with `-l directory`:
 ```bash
-python run_ppo.py -n 30 -l
+python3 run_ppo.py -n 30 -l
 ```
 *Default directory: logs folder* <br>
 *Note: Files must be marked with "_released" (e.g., PickPlaceRandomBlock_ppo_checkpoint_released.pth)*
@@ -65,7 +65,7 @@ python run_ppo.py -n 30 -l
 
 Run evaluation mode:
 ```bash
-python run_ppo_test.py -n 30
+python3 run_ppo_test.py -n 30
 ```
 *Uses the _released checkpoint in logs directory*
 
