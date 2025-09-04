@@ -340,7 +340,7 @@ def arg_parser():
     parser.add_argument("-l", "--load_path", action="store_const", const="default", default=None, help="Load model from default checkpoint path") 
     parser.add_argument("-n", "--num_envs", type=int, default=1, help="Number of environments to create") 
     parser.add_argument("-b", "--batch_size", type=int, default=None, help="Batch size for training")
-    parser.add_argument("-t", "--task", type=str, default="GraspFixedBlock", help="Task to train on")
+    parser.add_argument("-t", "--task", type=str, default="PickPlaceRandomBlock", help="Task to train on")
     parser.add_argument("-d", "--device", type=str, default="cuda", help="device: cpu or cuda:x or mps for macos")
 
     args = parser.parse_args()
