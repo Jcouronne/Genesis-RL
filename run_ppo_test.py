@@ -120,7 +120,7 @@ def run(env, agent, num_episodes):
         done_array = torch.tensor([False] * env.num_envs).to(args.device)
         states, actions, rewards, dones = [], [], [], []
     
-        for step in range(15):
+        for step in range(10):
             action = agent.select_action(state)
             next_state, reward, done = env.step(action)
 
@@ -244,6 +244,9 @@ def run(env, agent, num_episodes):
             # Update display
             plt.tight_layout()
             plt.pause(0.01)  # Small pause to update display
+            
+            # Save checkpoint
+            agent.save_checkpoint()
 
     # Turn off interactive mode and create final plot with variance bands
     plt.ioff()

@@ -1,0 +1,13 @@
+=== PPO Training Hyperparameters ===
+Training Started: 2025-09-05_11:43:57
+
+Learning Rate: 0.001
+Gamma: 0.85
+Clip Epsilon: 0.2
+Number of Layers: 12
+Hidden Dimension: 32
+Number of Episodes: 50
+Number of Environments: 30
+Batch Size: 1920
+Task: PickPlaceRandomBlock
+Device: cuda
